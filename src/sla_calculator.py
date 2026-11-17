@@ -1,18 +1,15 @@
-"""Módulo determinista para el cálculo y evaluación de acuerdos de nivel de servicio (SLA).
 
-NOTA PEDAGÓGICA (Semana 1):
-Este módulo contiene una simplificación/deuda técnica intencional que será analizada
-durante la Fase 1 (auditoría de contexto con LSP) y corregida en la Actividad Autónoma:
-- Actualmente calcula `elapsed_minutes` usando tiempo calendario continuo (24/7) para
-  TODOS los niveles de severidad, ignorando la propiedad `operates_24x7=False` de los
-  incidentes P2 y P3 (que solo deberían descontar tiempo en horario hábil: Lunes a Viernes,
-  08:00 a 18:00).
-"""
+"""Módulo determinista para el cálculo y evaluación de acuerdos de nivel de servicio (SLA)."""
 
 from datetime import datetime
-from typing import Dict
+from typing import Dict, NamedTuple
 
 from src.models import Incident, SLAEvaluation, SLARule, SeverityLevel
+from src.working_time_calculator import (
+    calculate_working_minutes,
+    to_bogota,
+)
+
 
 SLA_POLICY_TABLE: Dict[SeverityLevel, SLARule] = {
     "P0": SLARule(severity="P0", max_resolution_minutes=60, operates_24x7=True),
@@ -26,11 +23,18 @@ def get_sla_rule_for_severity(severity: SeverityLevel) -> SLARule:
     """Obtiene la regla de SLA aplicable a una severidad validada contra la tabla."""
     if severity not in SLA_POLICY_TABLE:
         raise ValueError(f"Severidad no válida: {severity}")
+
     return SLA_POLICY_TABLE[severity]
 
 
-def evaluate_sla_status(incident: Incident, reference_time: datetime) -> SLAEvaluation:
-    """Evalúa si un incidente ha incumplido su SLA o requiere escalamiento preventivo.
+def evaluate_sla_status(
+    incident: Incident,
+    reference_time: datetime,
+) -> SLAEvaluation:
+    """Evalúa el incumplimiento del SLA y la necesidad de escalamiento.
+
+    P0/P1: contabilizan tiempo calendario 24x7.
+    P2/P3: contabilizan únicamente tiempo hábil colombiano.
 
     Args:
         incident: Entidad del incidente a evaluar.
@@ -40,20 +44,31 @@ def evaluate_sla_status(incident: Incident, reference_time: datetime) -> SLAEval
         SLAEvaluation con los minutos transcurridos, restantes y banderas de estado.
     """
     rule = get_sla_rule_for_severity(incident.severity)
-    end_time = incident.resolved_at or reference_time
 
-    if end_time < incident.created_at:
-        raise ValueError("El tiempo de referencia no puede ser anterior a la creación.")
+    start_time = to_bogota(incident.created_at)
+    end_time = to_bogota(incident.resolved_at or reference_time)
 
-    # TODO(week-1-taller): Cuando rule.operates_24x7 es False (P2 y P3), solo deben
-    # contabilizarse los minutos dentro del horario hábil (Lunes-Viernes 08:00-18:00).
-    delta_seconds = (end_time - incident.created_at).total_seconds()
-    elapsed_minutes = int(delta_seconds // 60)
+    if end_time < start_time:
+        raise ValueError(
+            "El tiempo de referencia no puede ser anterior a la creación."
+        )
+
+    if rule.operates_24x7:
+        delta_seconds = (end_time - start_time).total_seconds()
+        elapsed_minutes = int(delta_seconds // 60)
+    else:
+        elapsed_minutes = calculate_working_minutes(
+            start_time,
+            end_time,
+        )
 
     remaining_minutes = rule.max_resolution_minutes - elapsed_minutes
     is_breached = elapsed_minutes > rule.max_resolution_minutes
 
-    escalation_limit = int(rule.max_resolution_minutes * rule.escalation_threshold_ratio)
+    escalation_limit = int(
+        rule.max_resolution_minutes * rule.escalation_threshold_ratio
+    )
+
     requires_escalation = (
         incident.status != "RESOLVED"
         and not is_breached
@@ -71,31 +86,157 @@ def evaluate_sla_status(incident: Incident, reference_time: datetime) -> SLAEval
     )
 
 
-def _run_demo() -> None:
-    """Ejecuta una demostración rápida del cálculo determinista de SLA."""
-    print("=== Demostración de Cálculo Determinista de SLA ===")
-    sample_incident = Incident(
-        incident_id="INC-2001",
-        title="Latencia elevada en reporte de órdenes",
-        component="reporting-api",
-        severity="P2",
-        status="OPEN",
-        created_at=datetime(2026, 11, 6, 17, 0, 0),  # Viernes 17:00
-    )
-    # Lunes siguiente a las 09:00 (solo 2 horas hábiles reales, pero 64 horas calendario)
-    monday_morning = datetime(2026, 11, 9, 9, 0, 0)
-    evaluation = evaluate_sla_status(sample_incident, reference_time=monday_morning)
+class SLATestCase(NamedTuple):
+    """Define un escenario de validación del cálculo SLA."""
 
-    print(f"Incidente: {evaluation.incident_id} (Severidad {evaluation.severity})")
-    print(f"Minutos transcurridos calculados: {evaluation.elapsed_minutes} min")
-    print(f"Minutos permitidos por SLA:       {evaluation.allowed_minutes} min")
-    print(f"¿SLA Incumplido?:                 {evaluation.is_breached}")
-    print(
-        "Nota: Observa que para un ticket P2 creado el viernes a las 17:00 y evaluado "
-        "el lunes a las 09:00 se contaron todo el sábado y domingo como tiempo activo."
-    )
+    name: str
+    severity: SeverityLevel
+    created_at: datetime
+    reference_time: datetime
+    expected_minutes: int
+    expected_breached: bool = False
+    expected_escalation: bool = False
+
+
+def _run_demo() -> None:
+    """Ejecuta pruebas deterministas de los casos borde del cálculo SLA."""
+    print("\n=== INCIDENTOPS | VALIDACIÓN DE CÁLCULO SLA ===")
+    print("Zona horaria: America/Bogota")
+    print("Horario hábil: Lunes-Viernes | 08:00-18:00\n")
+
+    cases = [
+        SLATestCase(
+            name="P2: Cruce de fin de semana",
+            severity="P2",
+            created_at=datetime(2026, 11, 6, 17, 0),
+            reference_time=datetime(2026, 11, 9, 9, 0),
+            expected_minutes=120,
+        ),
+        SLATestCase(
+            name="P2: Creación antes del horario laboral",
+            severity="P2",
+            created_at=datetime(2026, 11, 9, 6, 30),
+            reference_time=datetime(2026, 11, 9, 9, 0),
+            expected_minutes=60,
+        ),
+        SLATestCase(
+            name="P2: Cruce del cierre de jornada",
+            severity="P2",
+            created_at=datetime(2026, 11, 9, 17, 0),
+            reference_time=datetime(2026, 11, 10, 9, 0),
+            expected_minutes=120,
+        ),
+        SLATestCase(
+            name="P0: Cruce de fin de semana 24x7",
+            severity="P0",
+            created_at=datetime(2026, 11, 6, 17, 0),
+            reference_time=datetime(2026, 11, 9, 9, 0),
+            expected_minutes=3840,
+            expected_breached=True,
+        ),
+        SLATestCase(
+            name="P2: Festivo fijo nacional (Inmaculada Concepción)",
+            severity="P2",
+            created_at=datetime(2026, 12, 8, 9, 0),
+            reference_time=datetime(2026, 12, 8, 10, 0),
+            expected_minutes=0,
+        ),
+        SLATestCase(
+            name="P2: Festivo trasladable (Reyes Magos)",
+            severity="P2",
+            created_at=datetime(2026, 1, 12, 9, 0),
+            reference_time=datetime(2026, 1, 12, 10, 0),
+            expected_minutes=0,
+        ),
+        SLATestCase(
+            name="P2: Jueves y Viernes Santo",
+            severity="P2",
+            created_at=datetime(2026, 4, 2, 9, 0),
+            reference_time=datetime(2026, 4, 3, 17, 0),
+            expected_minutes=0,
+        ),
+        SLATestCase(
+            name="P2: Escalamiento preventivo exactamente al 75%",
+            severity="P2",
+            created_at=datetime(2026, 11, 9, 8, 0),
+            reference_time=datetime(2026, 11, 9, 14, 0),
+            expected_minutes=360,
+            expected_escalation=True,
+        ),
+        SLATestCase(
+            name="P2: Incumplimiento al superar 480 minutos",
+            severity="P2",
+            created_at=datetime(2026, 11, 9, 8, 0),
+            reference_time=datetime(2026, 11, 9, 16, 1),
+            expected_minutes=481,
+            expected_breached=True,
+        ),
+        SLATestCase(
+            name="P3: Jornada completa de dos días y escalamiento",
+            severity="P3",
+            created_at=datetime(2026, 11, 9, 8, 0),
+            reference_time=datetime(2026, 11, 10, 18, 0),
+            expected_minutes=1200,
+            expected_breached=False,
+            expected_escalation=True,
+        )
+    ]
+
+    passed = 0
+    failed = 0
+
+    for index, case in enumerate(cases, start=1):
+        incident = Incident(
+            incident_id=f"TEST-{index:03}",
+            title=case.name,
+            component="sla-test",
+            severity=case.severity,
+            status="OPEN",
+            created_at=case.created_at,
+        )
+
+        result = evaluate_sla_status(
+            incident,
+            reference_time=case.reference_time,
+        )
+
+        valid = (
+            result.elapsed_minutes == case.expected_minutes
+            and result.is_breached == case.expected_breached
+            and result.requires_escalation == case.expected_escalation
+        )
+
+        if valid:
+            passed += 1
+            status = "OK"
+        else:
+            failed += 1
+            status = "ERROR"
+
+        print(f"[{status}] {case.name}")
+        print(
+            f"       Esperado: {case.expected_minutes} min | "
+            f"Obtenido: {result.elapsed_minutes} min"
+        )
+
+        if not valid:
+            print(
+                f"       Incumplido esperado/obtenido: "
+                f"{case.expected_breached}/{result.is_breached}"
+            )
+            print(
+                f"       Escalamiento esperado/obtenido: "
+                f"{case.expected_escalation}/{result.requires_escalation}"
+            )
+
+    print("\n" + "=" * 55)
+    print(f"RESULTADO: {passed}/{len(cases)} pruebas satisfactorias")
+    print(f"Fallidas: {failed}")
+    print("=" * 55)
+
+    if failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
     _run_demo()
-
