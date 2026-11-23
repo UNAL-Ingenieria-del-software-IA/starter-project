@@ -3,6 +3,11 @@
 IncidentOps: Python 3.10 + `uv`, standard library only except `tiktoken` (context audits).
 This is a Week 1 ISIA teaching repo. Code, docstrings, CLI output, and docs are in Spanish — match that.
 
+`docs/constitution.md` is the superior norm: it prevails over ADRs and code. ADR-003
+(hexagonal) is accepted as the target topology. `src/` is **not migrated yet**, so the
+commands and module map below remain the current ones; adopting an HTTP, CLI or test
+framework is a pending decision that requires its own ADR first.
+
 ## Commands (run from the repo root)
 
 ```bash
