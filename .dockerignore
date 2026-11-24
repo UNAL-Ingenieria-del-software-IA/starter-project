@@ -1,0 +1,42 @@
+# Contexto de construcción de la imagen (spec 004, contracts/container-runtime.md).
+# Solo entran pyproject.toml, uv.lock, README.md y src/.
+
+# Control de versiones y entornos del host
+.git
+.gitignore
+.venv
+venv
+
+# Cachés
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+
+# Secretos y configuración local
+.env
+.env.*
+
+# Pruebas, especificaciones, documentación y datos de auditoría
+tests/
+specs/
+docs/
+data/
+
+# Herramientas de agentes y spec-kit
+.claude/
+.opencode/
+.specify/
+CONTEXT_LOG.md
+CONTEXT_LOG_TEMPLATE.md
+AGENTS.md
+
+# Bases de datos locales
+*.db
+*.sqlite
+*.sqlite3
+
+# Definición del propio runtime
+Dockerfile
+docker-compose.yml
+.dockerignore

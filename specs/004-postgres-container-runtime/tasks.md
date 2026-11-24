@@ -244,7 +244,7 @@ aislados, que se omiten de forma visible sin Docker.
 
 ### Pruebas de la historia 3 (escribir primero; deben fallar)
 
-- [ ] T034 [P] [US3] Agregar a tests/test_spec_004_runtime_health.py el bloque «US3 — estructura Docker (rápidas)», con aserciones de texto y sin `pyyaml` (research.md §R12, contracts/container-runtime.md):
+- [X] T034 [P] [US3] Agregar a tests/test_spec_004_runtime_health.py el bloque «US3 — estructura Docker (rápidas)», con aserciones de texto y sin `pyyaml` (research.md §R12, contracts/container-runtime.md):
   - en Dockerfile: `FROM python:3.12-slim`, `ghcr.io/astral-sh/uv:0.13.8`, `uv sync --frozen --no-dev --no-install-project`, un `USER` distinto de `root`, `--host 0.0.0.0` y `PYTHONUTF8=1`;
   - en .dockerignore: cada entrada del contrato;
   - en docker-compose.yml:
@@ -255,7 +255,7 @@ aislados, que se omiten de forma visible sin Docker.
     - `profiles` con `test` en `db-test`;
     - `DATABASE_URL` con el host `db`;
     - sin contraseñas fuera de `${…:-…}`.
-- [ ] T035 [P] [US3] Agregar a tests/test_spec_004_runtime_health.py el bloque «US3 — contenedores» con `@pytest.mark.docker` (RNF-011):
+- [X] T035 [P] [US3] Agregar a tests/test_spec_004_runtime_health.py el bloque «US3 — contenedores» con `@pytest.mark.docker` (RNF-011):
   - fixture `compose_project`: se omite si `docker info` falla; usa `-p incidentops-t<uuid8>` y un `API_HOST_PORT` libre; hace `down -v` en `finally`;
   - `test_compose_config_valida`: `docker compose config --format json`, comprobando servicios, perfiles, puertos y volúmenes;
   - `test_bdd_e12_entorno_nuevo`: `up -d --build --wait`; `db` sano antes que `api`; `/health` `200`; resumen con `INC-2001`…`INC-2008`;
@@ -267,7 +267,7 @@ aislados, que se omiten de forma visible sin Docker.
 
 ### Implementación de la historia 3
 
-- [ ] T036 [P] [US3] Crear el Dockerfile según research.md §R10 y contracts/container-runtime.md, con comentarios en español:
+- [X] T036 [P] [US3] Crear el Dockerfile según research.md §R10 y contracts/container-runtime.md, con comentarios en español:
   - `python:3.12-slim`;
   - `uv` de `ghcr.io/astral-sh/uv:0.13.8`;
   - `UV_PYTHON_DOWNLOADS=never`, `UV_PROJECT_ENVIRONMENT=/app/.venv`, `UV_COMPILE_BYTECODE=1`, `UV_LINK_MODE=copy` y `PYTHONUTF8=1`;
@@ -277,8 +277,8 @@ aislados, que se omiten de forma visible sin Docker.
   - `PATH` con `/app/.venv/bin`;
   - `EXPOSE 8080`;
   - `CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]`.
-- [ ] T037 [P] [US3] Crear .dockerignore con las exclusiones de contracts/container-runtime.md
-- [ ] T038 [US3] Agregar a docker-compose.yml los servicios `db` y `api` y el volumen `pgdata`, según research.md §R11 y contracts/container-runtime.md (data-model.md §4 `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB` y `API_HOST_PORT`):
+- [X] T037 [P] [US3] Crear .dockerignore con las exclusiones de contracts/container-runtime.md
+- [X] T038 [US3] Agregar a docker-compose.yml los servicios `db` y `api` y el volumen `pgdata`, según research.md §R11 y contracts/container-runtime.md (data-model.md §4 `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB` y `API_HOST_PORT`):
   - `db`:
     - `postgres:16-alpine` e `initdb --locale=C --encoding=UTF8`;
     - volumen `pgdata`;
@@ -292,7 +292,7 @@ aislados, que se omiten de forma visible sin Docker.
     - `127.0.0.1:${API_HOST_PORT:-8080}:8080`;
     - chequeo con Python y `urllib` contra `/health`, cada `10s` / `5s` / `3` / `start_period 15s` (≤ 60 s, RNF-008);
     - `restart: unless-stopped`.
-- [ ] T039 [US3] Verificar:
+- [X] T039 [US3] Verificar:
   - `uv run python -X utf8 -m pytest -v` (estructura en verde; `docker` SKIPPED sin Docker);
   - `uv run python -X utf8 -m pytest -v -m docker` en verde;
   - el nivel 3 de quickstart.md a mano;

@@ -1,14 +1,59 @@
 # Runtime de IncidentOps en contenedores (ADR-004, spec 004).
 #
-#   docker compose up -d --build --wait              # db + api
+#   docker compose up -d --build --wait                  # db + api; la API en 127.0.0.1:8080
 #   docker compose --profile test up -d --wait db-test   # base desechable para pytest -m postgres
+#   docker compose down                                  # los datos quedan en el volumen pgdata
+#   docker compose down -v                               # borra también el volumen
 #
 # Las credenciales tienen valores por defecto de desarrollo y se pueden sustituir por el
 # entorno (POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB). No hay secretos versionados ni
-# archivos que crear (FR-018).
+# archivos que crear (FR-018). La API no tiene autenticación: solo se publica en loopback.
 name: incidentops
 
 services:
+  # Base de datos del runtime: inicializada con intercalación C (paridad de orden con
+  # SQLite, ADR-004), datos en el volumen nombrado y sin publicar en el host (RNF-003).
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-incidentops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-incidentops}
+      POSTGRES_DB: ${POSTGRES_DB:-incidentops}
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # API: arranca cuando la base está sana; su chequeo es la sonda GET /health, que pasa a
+  # «no sano» en 60 s o menos si la base cae y vuelve a «sano» al recuperarse (RNF-008).
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-incidentops}:${POSTGRES_PASSWORD:-incidentops}@db:5432/${POSTGRES_DB:-incidentops}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8080}:8080"
+    healthcheck:
+      # La imagen slim no trae curl: se usa el Python de la imagen.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=4).status == 200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
   # Base desechable para las pruebas `postgres` (FR-020): solo con el perfil `test`, datos
   # en memoria (tmpfs) y publicada únicamente en loopback.
   db-test:
@@ -29,3 +74,6 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+
+volumes:
+  pgdata:
