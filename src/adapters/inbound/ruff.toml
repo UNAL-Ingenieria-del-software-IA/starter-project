@@ -1,0 +1,16 @@
+# Fronteras de los canales de entrada (Constitución Art. 2.4, 2.7 y Principio IV; spec 002 FR-005).
+# Ruff usa el archivo más cercano: `extend` hereda `select` de la raíz y esta tabla
+# `banned-api` reemplaza (no se suma a) la del padre, por eso está completa.
+# `src.main` no se prohíbe: `cli.py` lo importa dentro de `if __name__ == "__main__"`.
+extend = "../../../pyproject.toml"
+
+[lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+[lint.flake8-tidy-imports.banned-api]
+"sqlite3".msg = "Art. 2.4: un canal no accede a persistencia; llama al caso de uso."
+"src.adapters.outbound".msg = "Art. 2.8: solo la raíz de composición conoce adaptadores de salida."
+"src.domain.sla_calculator".msg = "FR-005 y Art. 2.4: un canal no recalcula SLA; usa IncidentService."
+"src.domain.triage_rules".msg = "Art. 2.4: un canal no replica el triaje; usa IncidentService."
+"src.domain.working_time_calculator".msg = "Art. 2.4: un canal no calcula tiempo hábil; usa IncidentService."
+"src.domain.holidays".msg = "Art. 2.4: un canal no calcula festivos; usa IncidentService."

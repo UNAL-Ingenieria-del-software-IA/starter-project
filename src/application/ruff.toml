@@ -1,0 +1,27 @@
+# Fronteras de la capa de casos de uso (Constitución Art. 2.1, 2.3, III.5 y Principio IV).
+# Ruff usa el archivo más cercano: `extend` hereda `select` de la raíz y esta tabla
+# `banned-api` reemplaza (no se suma a) la del padre, por eso está completa.
+extend = "../../pyproject.toml"
+
+[lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+[lint.flake8-tidy-imports.banned-api]
+"sqlite3".msg = "Art. 2.3: la aplicación no conoce SQL; usa IncidentRepositoryPort."
+"json".msg = "Art. 2.3: la serialización pertenece a los adaptadores."
+"pathlib".msg = "Art. 2.3: la aplicación no conoce rutas del proyecto."
+"os".msg = "Art. III.5: solo la raíz de composición lee DATABASE_URL y el entorno."
+"argparse".msg = "Art. 2.3: el análisis de argumentos pertenece al canal CLI."
+"fastapi".msg = "T4: frameworks confinados a src/adapters/inbound/."
+"starlette".msg = "T4: frameworks confinados a src/adapters/inbound/."
+"pydantic".msg = "T2: Pydantic solo en los esquemas de src/adapters/inbound/api/."
+"typer".msg = "T4: frameworks confinados a src/adapters/inbound/."
+"click".msg = "T4: frameworks confinados a src/adapters/inbound/."
+"uvicorn".msg = "T4: frameworks confinados a src/adapters/inbound/."
+"httpx".msg = "Art. 5.4: utilidades de prueba confinadas a tests/."
+"pytest".msg = "Art. 5.4: utilidades de prueba confinadas a tests/."
+"src.adapters".msg = "Art. 2.1: la aplicación no depende de adaptadores; declara puertos."
+"src.main".msg = "Art. 2.1: solo la raíz de composición conoce implementaciones."
+"datetime.datetime.now".msg = "Art. 1.3: el tiempo llega por ClockPort o como parámetro."
+"datetime.datetime.utcnow".msg = "Art. 1.3: el tiempo llega por ClockPort o como parámetro."
+"datetime.datetime.today".msg = "Art. 1.3: el tiempo llega por ClockPort o como parámetro."

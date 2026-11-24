@@ -27,3 +27,16 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+# Fronteras estáticas (Constitución, Principio IV). Las capas `domain`, `application` y
+# `adapters/inbound` tienen su propio `ruff.toml` que extiende esta configuración y declara
+# su lista completa de `banned-api` (TID251). Ejecutar siempre `uv run ruff check src/`
+# sin `--config`: esa opción desactiva la configuración jerárquica.
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "TID"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"

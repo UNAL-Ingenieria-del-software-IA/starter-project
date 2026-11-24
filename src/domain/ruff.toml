@@ -1,0 +1,29 @@
+# Fronteras del núcleo de dominio (Constitución Art. 1.2, 1.3 y 2.1; Principio IV).
+# Ruff usa el archivo más cercano: `extend` hereda `select` de la raíz y esta tabla
+# `banned-api` reemplaza (no se suma a) la del padre, por eso está completa.
+extend = "../../pyproject.toml"
+
+[lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+[lint.flake8-tidy-imports.banned-api]
+"sqlite3".msg = "Art. 1.2: el dominio no accede a persistencia."
+"json".msg = "Art. 1.2: el dominio no serializa; eso es tarea de los adaptadores."
+"pathlib".msg = "Art. 1.2: el dominio no conoce rutas del proyecto."
+"os".msg = "Art. 1.2: el dominio no lee variables de entorno ni el sistema operativo."
+"argparse".msg = "Art. 1.2: el dominio no analiza argumentos de línea de comandos."
+"fastapi".msg = "Art. 1.2 y T4: frameworks confinados a src/adapters/inbound/."
+"starlette".msg = "Art. 1.2 y T4: frameworks confinados a src/adapters/inbound/."
+"pydantic".msg = "Art. 1.2 y T2: los modelos de dominio son dataclasses puras."
+"typer".msg = "Art. 1.2 y T4: frameworks confinados a src/adapters/inbound/."
+"click".msg = "Art. 1.2 y T4: frameworks confinados a src/adapters/inbound/."
+"uvicorn".msg = "Art. 1.2 y T4: frameworks confinados a src/adapters/inbound/."
+"httpx".msg = "Art. 5.4: utilidades de prueba confinadas a tests/."
+"pytest".msg = "Art. 5.4: utilidades de prueba confinadas a tests/."
+"src.application".msg = "Art. 2.1: el dominio no depende de la capa de aplicación."
+"src.adapters".msg = "Art. 2.1: el dominio no depende de adaptadores."
+"src.main".msg = "Art. 2.1: solo la raíz de composición conoce implementaciones."
+"datetime.datetime.now".msg = "Art. 1.3: el núcleo nunca lee el reloj; recibe el instante."
+"datetime.datetime.utcnow".msg = "Art. 1.3: el núcleo nunca lee el reloj; recibe el instante."
+"datetime.datetime.today".msg = "Art. 1.3: el núcleo nunca lee el reloj; recibe el instante."
+"datetime.date.today".msg = "Art. 1.3: el núcleo nunca lee el reloj; recibe el instante."
