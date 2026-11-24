@@ -1,3 +1,38 @@
+<!--
+Sync Impact Report (retirar antes de confirmar, Governance punto 4)
+- Versión: 3.0.0 → 3.1.0 (MINOR). Se amplía materialmente la guía: se admite un segundo
+  motor y una dependencia nueva. Nada que cumpliera la 3.0.0 deja de cumplir.
+- Principios modificados (sin renombrar):
+  - 1.2 Pureza: `psycopg` prohibido en `domain/`.
+  - 2.6 Adaptadores secundarios: persistencia dual SQLite/PostgreSQL, consultas
+    parametrizadas por driver, instantes ISO 8601 en texto e intercalación `C`.
+  - 3.3 Prohibiciones del puerto: tipos de `psycopg` y traducción de errores del driver.
+  - 3.5 Selección por `DATABASE_URL`: esquema `postgresql://`, la URL nunca aparece en
+    mensajes y los dos almacenes conviven.
+  - 3.6 Verificación: conformidad del puerto contra ambos adaptadores; omisión visible sin
+    PostgreSQL.
+  - 4.2 Reglas Ruff: `psycopg` vetado en `domain/`, `application/` y `adapters/inbound/`.
+- Restricciones modificadas:
+  - T2: `psycopg[binary]` en el stack.
+  - T3: dos motores; sin ORM ni capa de abstracción SQL.
+  - T4: `psycopg` confinado a `adapters/outbound/` y `tests/`.
+  - T5: el ADR de stack deja de llamarse ADR-004.
+- Governance: «Pendiente de registro» reasigna el ADR de stack a un número pendiente.
+- Secciones añadidas: ninguna. Secciones retiradas: ninguna.
+- Plantillas (.specify/templates/*): sin cambios necesarios ✅. Leen la constitución en
+  tiempo de ejecución y no fijan el motor.
+- Pendientes que rompen el cumplimiento hasta resolverse:
+  ⚠ ADR-004 figura como «Propuesto»; Governance (2) exige ADR aceptado.
+  ⚠ `docs/constitution.md` (Art. 2.6 y 3.2) aún admite solo `sqlite3` y llama ADR-004 al
+    del stack.
+  ⚠ `AGENTS.md` (Governance 3) cita ADR-004 como el ADR de stack y no menciona
+    `postgresql://`.
+  ⚠ Los `ruff.toml` de `src/domain/`, `src/application/` y `src/adapters/inbound/` aún no
+    vetan `psycopg` (Principio 4.2).
+  ⚠ ADR-001 no registra todavía el reemplazo parcial por ADR-004.
+- TODO: ninguno en el texto. El número del ADR de stack queda pendiente de forma explícita
+  en Governance.
+-->
 # Constitución — IncidentOps
 
 ## Core Principles
@@ -10,8 +45,8 @@ Los módulos canónicos son `models.py`, `triage_rules.py`, `sla_calculator.py`,
 `working_time_calculator.py` y `holidays.py`. Ningún caso de uso, adaptador, DTO,
 esquema, fixture o prueba DEBE reimplementar, aproximar ni sobrescribir esos valores.
 
-**1.2 Pureza.** `src/domain/` NO DEBE importar `sqlite3`, `argparse`, `json`, `pathlib`,
-`os`, HTTP, MCP, frameworks (`fastapi`, `pydantic`, `typer`, `uvicorn`), clientes de
+**1.2 Pureza.** `src/domain/` NO DEBE importar `sqlite3`, `psycopg`, `argparse`, `json`,
+`pathlib`, `os`, HTTP, MCP, frameworks (`fastapi`, `pydantic`, `typer`, `uvicorn`), clientes de
 canal ni variables de entorno. Recibe `datetime` como parámetro, no llama a
 `datetime.now()`, `datetime.today()` ni `datetime.utcnow()`, no imprime y devuelve
 valores inmutables.
@@ -104,10 +139,23 @@ registro en la raíz de composición. Un canal nuevo no reabre el núcleo ni mod
 contratos de dominio.
 
 **2.6 Adaptadores secundarios.** `src/adapters/outbound/` implementa los puertos
-secundarios. La persistencia usa `sqlite3` de la librería estándar con marcadores `?`,
-el índice parcial y el streaming de ADR-001, con el predicado que fija ADR-005. El DDL y el mapeo fila ↔ entidad viven
-solo aquí. Otro motor relacional solo se admite mediante ADR aceptado que enmiende
-ADR-001.
+secundarios. La persistencia es dual (ADR-004): un adaptador SQLite sobre `sqlite3` de
+la librería estándar y un adaptador PostgreSQL sobre `psycopg[binary]`. Ambos DEBEN:
+
+- implementar el mismo `IncidentRepositoryPort` con la misma semántica en cada método;
+- usar consultas parametrizadas con el marcador propio de su driver (`?` en SQLite,
+  `%s` en PostgreSQL), nunca SQL concatenado;
+- conservar el índice parcial cubriente y la lectura en streaming de ADR-001, con el
+  predicado que fija ADR-005;
+- guardar `created_at` y `resolved_at` como texto ISO 8601 en hora de Bogotá, con
+  desfase explícito y la misma precisión fija en ambos motores, para que la ida y vuelta
+  sea idéntica y el orden lexicográfico coincida con el cronológico.
+
+La base PostgreSQL DEBE usar intercalación `C` (orden por bytes, equivalente a `BINARY`
+en SQLite) para que ordenamientos e índices sobre texto den el mismo resultado en ambos
+motores. Ninguna regla temporal ni de SLA se calcula en SQL (Principio 1.1, ADR-001). El
+DDL, el SQL y el mapeo fila ↔ entidad de cada motor viven solo en su adaptador. Un
+tercer motor exige un ADR aceptado nuevo.
 
 **2.7 Paridad de canales.** REST, CLI y el futuro MCP DEBEN producir la misma
 clasificación para el mismo reporte. La paridad se verifica con una suite de contrato
@@ -133,8 +181,9 @@ no genere aleatoriedad (Principio 1.3). Añadir un método
 a un puerto obliga a todos los adaptadores y exige justificación en el ADR o
 especificación correspondiente.
 
-**3.3 Prohibiciones del puerto.** Un puerto NO DEBE exponer SQL, `sqlite3.Row`, nombres
-de tabla, DSN ni detalles del motor. La semántica del puerto es de dominio y casos de
+**3.3 Prohibiciones del puerto.** Un puerto NO DEBE exponer SQL, `sqlite3.Row`, filas o
+cursores de `psycopg`, nombres de tabla, DSN ni detalles del motor. Los errores del
+driver se traducen dentro del adaptador a las excepciones declaradas por el puerto. La semántica del puerto es de dominio y casos de
 uso.
 
 **3.4 Repositorio nulo.** Las operaciones sin efectos secundarios (por ejemplo, el
@@ -143,12 +192,26 @@ memoria, sin condicionales de canal en el servicio.
 
 **3.5 Selección por `DATABASE_URL`.** El adaptador de persistencia se selecciona
 exclusivamente por `DATABASE_URL` en la raíz de composición. Ningún módulo de
-`domain/` o `application/` lee esa variable ni conoce el motor elegido. Cambiar de
-motor es un adaptador nuevo más una línea de composición.
+`domain/` o `application/` lee esa variable ni conoce el motor elegido. Esquemas
+admitidos (ADR-004, que amplía ADR-006):
+
+- `sqlite:///:memory:` (por defecto): almacén en memoria sembrado con los incidentes de
+  demostración;
+- `sqlite:///<ruta>`: archivo SQLite, sin siembra;
+- `postgresql://…`: base PostgreSQL dedicada.
+
+Cualquier otro esquema DEBE fallar al arrancar. Como la URL de PostgreSQL contiene
+credenciales, ningún mensaje, registro ni respuesta DEBE incluir la URL: solo su
+esquema. SQLite en memoria sigue siendo el almacén de desarrollo, pruebas y CLI;
+PostgreSQL es el del runtime dedicado. Ambos conviven.
 
 **3.6 Verificación de intercambiabilidad.** Los casos de uso DEBEN poder ejecutarse con
-dobles en memoria sin abrir una base de datos. Una prueba que requiera SQLite para
-verificar una regla de negocio viola esta frontera.
+dobles en memoria sin abrir una base de datos. Una prueba que requiera SQLite o
+PostgreSQL para verificar una regla de negocio viola esta frontera. La suite de
+conformidad del puerto DEBE ejecutarse contra ambos adaptadores. Cuando no haya una base
+PostgreSQL configurada para pruebas, sus casos se omiten de forma explícita y visible
+en el informe, nunca se dan por superados. Un cambio en el adaptador PostgreSQL o en el
+esquema solo está terminado con esos casos ejecutados en verde.
 
 **Rationale:** un puerto que filtra el motor reproduce el acoplamiento actual con otra
 forma; un puerto mínimo mantiene el coste de sustitución en un solo adaptador.
@@ -160,8 +223,10 @@ código 0 antes de integrar cualquier cambio. Un cambio con hallazgos de Ruff no
 terminado.
 
 **4.2 Reglas de frontera codificadas.** La configuración de Ruff en `pyproject.toml`
-DEBE expresar, como mínimo, que `src/domain/` no importa frameworks, E/S, `os` ni
-`sqlite3`, y que `src/domain/` y `src/application/` no importan `src.adapters`.
+DEBE expresar, como mínimo, que `src/domain/` no importa frameworks, E/S, `os`,
+`sqlite3` ni `psycopg`; que `src/application/` y `src/adapters/inbound/` no importan
+`sqlite3` ni `psycopg`; y que `src/domain/` y `src/application/` no importan
+`src.adapters`.
 La comprobación DEBE fallar de forma automática ante una importación prohibida; no
 basta con una convención documentada.
 
@@ -228,23 +293,29 @@ En Windows todos los comandos conservan `-X utf8` para evitar `UnicodeEncodeErro
 la salida acentuada. Detrás de un proxy TLS local se usa `uv sync --system-certs`.
 
 **T2 Stack adoptado.** Las dependencias de ejecución permitidas son `fastapi`,
-`uvicorn`, `pydantic` v2, `typer` y `tiktoken`. Las de desarrollo son `pytest`,
-`httpx` y `ruff`. Pydantic v2 se usa solo en los esquemas de entrada/salida de
-`src/adapters/inbound/api/`; los modelos de dominio son dataclasses puras.
+`uvicorn`, `pydantic` v2, `typer`, `tiktoken` y `psycopg[binary]` (ADR-004). Las de
+desarrollo son `pytest`, `httpx` y `ruff`. Pydantic v2 se usa solo en los esquemas de
+entrada/salida de `src/adapters/inbound/api/`; los modelos de dominio son dataclasses
+puras.
 
-**T3 Persistencia.** SQLite se usa exclusivamente a través de `sqlite3` de la librería
-estándar, con marcadores `?` y sin concatenación de SQL. Prohibidos los ORM pesados,
-`pandas` y las librerías de calendario. Un motor distinto de SQLite exige ADR aceptado
-que enmiende ADR-001; hasta entonces, SQLite es el único motor admitido.
+**T3 Persistencia.** Se admiten dos motores (ADR-004, que reemplaza parcialmente
+ADR-001): SQLite, exclusivamente a través de `sqlite3` de la librería estándar, y
+PostgreSQL, exclusivamente a través de `psycopg[binary]`. El SQL se escribe a mano y
+siempre va parametrizado; prohibida la concatenación. Prohibidos los ORM y las capas de
+abstracción o generación de SQL (incluido SQLAlchemy Core), `pandas` y las librerías de
+calendario. Un pool de conexiones u otra extensión de `psycopg` que añada una dependencia
+exige su propio ADR (T5).
 
 **T4 Confinamiento.** FastAPI, Pydantic, Typer, Uvicorn, httpx y pytest se confinan a
-`src/adapters/inbound/` y `tests/`. Ningún artículo de esta Constitución autoriza a
-`domain/` o `application/` a importarlos.
+`src/adapters/inbound/` y `tests/`. `psycopg` se confina a `src/adapters/outbound/` y a
+`tests/`. Ningún artículo de esta Constitución autoriza a `domain/` o `application/` a
+importarlos.
 
 **T5 Dependencias nuevas.** Toda dependencia fuera de T2 exige ADR aceptado que
 justifique la necesidad, el coste y el confinamiento. La excepción histórica que
-introdujo el stack sin ADR queda cerrada con esta versión: ADR-004 DEBE registrar la
-decisión y enmendar las rutas de ADR-003 §3.
+introdujo el stack de canales y pruebas sin ADR sigue abierta: un ADR propio DEBE
+registrar esa decisión y enmendar las rutas de ADR-003 §3 (ver «Pendiente de
+registro»).
 
 **T6 Empaquetado.** `package = false` se mantiene: los módulos se ejecutan como
 `-m src.<módulo>` y pytest resuelve `src` con `pythonpath = ["."]`. No se admite una
@@ -323,10 +394,12 @@ DEBE justificarse frente a la alternativa más simple.
 expiración. Ninguna capa puede invocar «urgencia operativa» para saltarse un artículo
 sin esa excepción documentada.
 
-**Pendiente de registro.** ADR-004 DEBE registrar el stack adoptado (FastAPI,
-Pydantic v2, Typer, pytest, Ruff) y enmendar las rutas de ADR-003 §3 (`rest/` y `cli/`)
-a las rutas canónicas de esta Constitución (`api/` y `cli.py`). Mientras ADR-004 no
-exista, rige el texto de esta Constitución.
+**Pendiente de registro.** Un ADR propio DEBE registrar el stack de canales y pruebas
+adoptado (FastAPI, Pydantic v2, Typer, pytest, Ruff) y enmendar las rutas de ADR-003 §3
+(`rest/` y `cli/`) a las rutas canónicas de esta Constitución (`api/` y `cli.py`). Ese
+ADR estaba reservado como ADR-004, pero ese número quedó asignado a la persistencia
+dual; el número del ADR de stack está pendiente de asignar. Mientras ese ADR no exista,
+rige el texto de esta Constitución.
 
 **Desviación abierta: enmienda 3.0.0 sin ADR.** La versión 3.0.0 se adoptó sin el ADR
 que exige el punto (2) de la Enmienda, por decisión del 2026-11-24. Cambió:
@@ -343,4 +416,4 @@ edita; sus filas sobre `find_open_duplicates` y el catálogo de puertos quedan
 desplazadas por esta Constitución hasta que un ADR las reemplace. Mientras ese ADR no
 exista, el criterio F4 (f) no se cumple para H003.
 
-**Version**: 3.0.0 | **Ratified**: 2026-11-23 | **Last Amended**: 2026-11-24
+**Version**: 3.1.0 | **Ratified**: 2026-11-23 | **Last Amended**: 2026-11-24
