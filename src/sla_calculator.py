@@ -1,12 +1,14 @@
 """Puente de compatibilidad y regresión SLA.
 
 La política y `evaluate_sla_status` viven en `src.domain.sla_calculator` (ADR-003).
-Este módulo conserva el arnés `_run_demo()` (10 aserciones) que se ejecuta con
+Este módulo conserva el arnés `_run_demo()` (12 aserciones) que se ejecuta con
 `uv run python -X utf8 -m src.sla_calculator`; imprimir no está permitido en el dominio.
+Los casos E10.1 y E10.2 (spec 003) cubren la reconstrucción del SLA en un instante
+anterior y posterior a la resolución (Art. 1.12).
 """
 
 from datetime import datetime
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 from src.domain.models import Incident, SeverityLevel
 from src.domain.sla_calculator import (  # noqa: F401
@@ -26,6 +28,7 @@ class SLATestCase(NamedTuple):
     expected_minutes: int
     expected_breached: bool = False
     expected_escalation: bool = False
+    resolved_at: Optional[datetime] = None
 
 
 def _run_demo() -> None:
@@ -109,7 +112,27 @@ def _run_demo() -> None:
             expected_minutes=1200,
             expected_breached=False,
             expected_escalation=True,
-        )
+        ),
+        SLATestCase(
+            name="P1 resuelto fuera de plazo: auditoría antes del cierre (E10.1)",
+            severity="P1",
+            created_at=datetime(2026, 11, 24, 8, 0),
+            reference_time=datetime(2026, 11, 24, 11, 30),
+            expected_minutes=210,
+            expected_breached=False,
+            expected_escalation=True,
+            resolved_at=datetime(2026, 11, 24, 13, 0),
+        ),
+        SLATestCase(
+            name="P1 resuelto fuera de plazo: auditoría después del cierre (E10.2)",
+            severity="P1",
+            created_at=datetime(2026, 11, 24, 8, 0),
+            reference_time=datetime(2026, 11, 24, 14, 0),
+            expected_minutes=300,
+            expected_breached=True,
+            expected_escalation=False,
+            resolved_at=datetime(2026, 11, 24, 13, 0),
+        ),
     ]
 
     passed = 0
@@ -121,8 +144,9 @@ def _run_demo() -> None:
             title=case.name,
             component="sla-test",
             severity=case.severity,
-            status="OPEN",
+            status="RESOLVED" if case.resolved_at is not None else "OPEN",
             created_at=case.created_at,
+            resolved_at=case.resolved_at,
         )
 
         result = evaluate_sla_status(

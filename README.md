@@ -61,6 +61,26 @@ uv run python -X utf8 -m src.adapters.inbound.cli summary --component payment-ga
 
 Con `DATABASE_URL="sqlite:///./incidentes.db"` se usa un archivo (sin datos de demostración). `--format json` imprime exactamente el cuerpo de la respuesta HTTP.
 
+### Creación de incidentes y auditoría de SLA (H003)
+Crear un incidente lo clasifica con el triaje canónico, lo guarda y avisa si duplica uno abierto con la misma clave de grupo (`is_duplicate`, `duplicate_of`). La auditoría devuelve la evaluación de SLA en cualquier instante, incluso antes de una resolución ya registrada. Con el almacén de demostración, una caída de pagos duplica `INC-2001`:
+
+```bash
+uv run uvicorn src.main:app --host 127.0.0.1 --port 8080
+curl -s -X POST http://127.0.0.1:8080/api/v1/incidents -H "Content-Type: application/json" \
+  -d '{"title":"Caída de la pasarela de pagos","raw_text":"La pasarela de pagos está caída, ningún cliente puede pagar"}'
+curl -s "http://127.0.0.1:8080/api/v1/incidents/INC-2001/sla?reference_time=2026-11-24T08:15:00"
+```
+
+Por CLI, cada invocación es un proceso nuevo: con el almacén en memoria por defecto, un `sla` no ve lo que creó un `create` anterior. Para encadenarlos, usa un archivo:
+
+```bash
+export DATABASE_URL="sqlite:///./incidentes.db"   # PowerShell: $env:DATABASE_URL = "sqlite:///./incidentes.db"
+uv run python -X utf8 -m src.adapters.inbound.cli create --title "Caída de la pasarela de pagos" --raw-text "La pasarela de pagos está caída" --incident-id INC-DEMO-01 --created-at 2026-11-06T17:00:00 --format json
+uv run python -X utf8 -m src.adapters.inbound.cli sla INC-DEMO-01 --reference-time 2026-11-09T09:00:00 --format json
+```
+
+El segundo comando devuelve 120 minutos hábiles transcurridos de 480 (el fin de semana no cuenta). Códigos de salida del CLI: `0` correcto, `1` entrada inválida, incidente inexistente o identificador repetido, `2` error de uso y `4` error interno. Detalle: [`specs/003-incident-lifecycle-sla/quickstart.md`](specs/003-incident-lifecycle-sla/quickstart.md).
+
 ### 3. Fase 3 — Auditoría del Motor de Triaje (`src/triage_rules.py`)
 Evalúa cómo el motor heurístico actual clasifica los 10 incidentes de [`data/sample_incidents.json`](data/sample_incidents.json) e identifica sus fallos de diseño:
 

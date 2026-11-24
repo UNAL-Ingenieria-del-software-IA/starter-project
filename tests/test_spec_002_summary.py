@@ -15,6 +15,7 @@ import json
 import logging
 import time
 import typing
+from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Callable, List, Optional, Tuple
 
@@ -106,8 +107,10 @@ def repo(request) -> IncidentRepositoryPort:
     return REPOSITORY_FACTORIES[request.param]()
 
 
-def test_el_puerto_declara_los_cinco_metodos_del_hito():
+def test_el_puerto_declara_los_seis_metodos_del_hito():
+    # spec 003 añade add_incident (contrato de puerto enmendado, Constitución 3.0.0).
     assert PORT_METHODS == [
+        "add_incident",
         "check_health",
         "find_open_duplicates",
         "get_incident",
@@ -186,19 +189,27 @@ def test_activos_filtrados_por_componente(repo):
     assert repo.list_active_incidents("reporting-api") == []
 
 
-def test_duplicados_abiertos_en_ventana_inclusiva_y_ordenados(repo):
+def test_duplicados_abiertos_por_clave_de_grupo_y_ordenados(repo):
     """
-    Given activos y resueltos de un componente con distintas creaciones
-    When  se buscan equivalentes abiertos en una ventana
-    Then  solo vuelven los activos del componente dentro de la ventana, por creación
+    Given activos y resueltos con distintas claves de grupo y creaciones
+    When  se buscan los abiertos de una clave excluyendo un identificador
+    Then  solo vuelven los activos de esa clave, sin el excluido, por creación
+
+    Firma enmendada por spec 003 (antes: ventana por componente; contrato de spec 002
+    actualizado antes que esta prueba, Art. 5.6).
     """
     base = REF - timedelta(minutes=30)
-    repo.save_incident(make_incident("INC-B", created_at=base + timedelta(minutes=30)))
-    repo.save_incident(make_incident("INC-A", created_at=base))
-    repo.save_incident(make_incident("INC-C", created_at=base + timedelta(minutes=31)))
-    repo.save_incident(make_incident("INC-D", created_at=base + timedelta(minutes=5), status="RESOLVED"))
-    repo.save_incident(make_incident("INC-E", created_at=base + timedelta(minutes=5), component="auth-identity"))
-    found = repo.find_open_duplicates("payment-gateway", base, base + timedelta(minutes=30))
+    key = "payment-availability"
+    for incident in (
+        make_incident("INC-B", created_at=base + timedelta(days=3)),
+        make_incident("INC-A", created_at=base),
+        make_incident("INC-C", created_at=base + timedelta(minutes=5)),
+        make_incident("INC-D", created_at=base + timedelta(minutes=5), status="RESOLVED"),
+        make_incident("INC-E", created_at=base + timedelta(minutes=5), component="auth-identity"),
+    ):
+        other_key = "auth-availability" if incident.incident_id == "INC-E" else key
+        repo.save_incident(replace(incident, duplicate_group_key=other_key))
+    found = repo.find_open_duplicates(key, "INC-C")
     assert [item.incident_id for item in found] == ["INC-A", "INC-B"]
 
 
@@ -271,7 +282,9 @@ def test_repositorio_nulo_no_tiene_efectos():
     repository.save_incident(make_incident("INC-1"))
     assert repository.get_incident("INC-1") is None
     assert list(repository.list_active_incidents()) == []
-    assert list(repository.find_open_duplicates("payment-gateway", REF, REF)) == []
+    repository.add_incident(make_incident("INC-2"))
+    assert repository.get_incident("INC-2") is None
+    assert list(repository.find_open_duplicates("payment-availability", "INC-1")) == []
     assert repository.check_health() is True
 
 
@@ -737,7 +750,7 @@ def test_e11a_invalidez_semantica_del_instante_y_del_filtro():
     When  se envía por HTTP o por CLI
     Then  se rechaza sin devolver resumen
     And   HTTP responde 422 con el código de error correspondiente
-    And   el CLI termina con código 3 y escribe el diagnóstico por stderr
+    And   el CLI termina con código 1 y escribe el diagnóstico por stderr
     """
     service, _ = summary_service(*two_component_store())
     client, cli_app, runner = channels(service)
@@ -750,7 +763,7 @@ def test_e11a_invalidez_semantica_del_instante_y_del_filtro():
     assert http_time.json()["error"]["code"] == "invalid_timestamp"
     assert http_time.json()["error"]["field"] == "reference_time"
     for result, code in ((cli_time, "invalid_timestamp"), (cli_component, "invalid_payload")):
-        assert result.exit_code == 3
+        assert result.exit_code == 1  # Antes 3; enmienda de spec 002 por spec 003 D8.
         assert f"error [{code}]" in result.stderr
         assert result.stdout == ""
 

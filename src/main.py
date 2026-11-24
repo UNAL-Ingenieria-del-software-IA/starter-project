@@ -27,7 +27,8 @@ from src.adapters.outbound.factory import (
     create_incident_repository,
     is_in_memory_url,
 )
-from src.application.ports import IncidentRepositoryPort
+from src.adapters.outbound.id_generator import RandomHexIdGenerator
+from src.application.ports import IncidentIdGeneratorPort, IncidentRepositoryPort
 from src.application.services import IncidentService
 
 
@@ -51,10 +52,19 @@ def build_repository(database_url: Optional[str] = None) -> IncidentRepositoryPo
 def build_service(
     now: Optional[datetime] = None,
     repository: Optional[IncidentRepositoryPort] = None,
+    id_generator: Optional[IncidentIdGeneratorPort] = None,
 ) -> IncidentService:
-    """Construye el caso de uso; `now` fija el reloj y `repository` sustituye a `DATABASE_URL`."""
+    """Construye el caso de uso.
+
+    `now` fija el reloj, `repository` sustituye a `DATABASE_URL` e `id_generator` al
+    generador aleatorio de identificadores (spec 003 research §R7).
+    """
     clock = FixedClock(now) if now is not None else SystemClock()
-    return IncidentService(clock, repository if repository is not None else build_repository())
+    return IncidentService(
+        clock,
+        repository if repository is not None else build_repository(),
+        id_generator if id_generator is not None else RandomHexIdGenerator(),
+    )
 
 
 cli = create_cli(build_service)

@@ -1,15 +1,21 @@
-"""Adaptador CLI del triaje (spec 001 §7) y del resumen de activos (spec 002) sobre Typer.
+"""Adaptador CLI del triaje (spec 001 §7), del resumen de activos (spec 002) y de la
+creación y auditoría de SLA de incidentes (spec 003) sobre Typer.
 
 Uso:
     uv run python -X utf8 -m src.adapters.inbound.cli triage --raw-text "..." [--format json]
     uv run python -X utf8 -m src.adapters.inbound.cli summary [--component X] [--reference-time ISO] [--format json]
+    uv run python -X utf8 -m src.adapters.inbound.cli create --title "..." --raw-text "..." [--format json]
+    uv run python -X utf8 -m src.adapters.inbound.cli sla INC-XXXXXXXX [--reference-time ISO] [--format json]
 
 Solo traduce argumentos, llama a `IncidentService` y formatea la salida con las mismas
-proyecciones que HTTP (`to_contract`, `summary_to_contract`). `stdout` lleva solo el
-resultado; `stderr`, los diagnósticos.
+proyecciones que HTTP (`to_contract`, `summary_to_contract`, `creation_to_contract`,
+`sla_audit_to_contract`). `stdout` lleva solo el resultado; `stderr`, los diagnósticos.
+Cada invocación es un proceso nuevo: para crear y auditar después hace falta un
+`DATABASE_URL` de archivo.
 
-Códigos de salida: 0 éxito · 2 error de uso · 3 entrada inválida · 4 fallo interno o
-configuración inválida (p. ej. `DATABASE_URL` no soportada).
+Códigos de salida (Constitución 3.0.0, F3): 0 éxito · 1 entrada inválida · 2 error de
+uso · 4 fallo interno o configuración inválida (p. ej. `DATABASE_URL` no soportada). El
+código 3 queda retirado.
 
 `triage`, primer corte: un reporte por invocación. `--file`, `--raw-text` repetible,
 `audit`, `--format output` y `--explain` quedan pendientes.
@@ -24,17 +30,23 @@ from typing import Annotated, Callable, Optional
 
 import typer
 
+from src.application.ports import IncidentIdConflictError
 from src.application.services import (
     ActiveIncidentsSummary,
+    CreateIncidentInput,
+    IncidentNotFoundError,
     IncidentService,
     ReportInput,
+    creation_to_contract,
+    parse_instant,
     parse_reference_time,
+    sla_audit_to_contract,
     summary_to_contract,
     to_contract,
 )
 from src.application.services import ValidationError as TriageValidationError
 
-EXIT_INVALID_INPUT = 3
+EXIT_INVALID_INPUT = 1
 EXIT_INTERNAL_ERROR = 4
 
 ServiceFactory = Callable[[Optional[datetime]], IncidentService]
@@ -101,6 +113,37 @@ def _render_table(label: str, result: dict) -> str:
     )
     rule = "-" * 125
     return "\n".join([header, rule, row, rule])
+
+
+def _render_creation_table(body: dict) -> str:
+    """Presentación humana de la creación (no es contrato, spec 003 FR-020)."""
+    header = f"{'ID':<14} | {'Sev':<3} | {'Componente':<26} | {'Equipo':<12} | Grupo"
+    row = (
+        f"{body['incident_id']:<14} | {body['severity']:<3} | {body['component']:<26} | "
+        f"{body['recommended_team']:<12} | {body['duplicate_group_key'] or 'none'}"
+    )
+    rule = "-" * 100
+    lines = [header, rule, row, rule]
+    if body["is_duplicate"]:
+        # El aviso es resultado, no diagnóstico: va a stdout (contrato CLI de spec 003).
+        lines.append(f"AVISO: duplica incidentes abiertos: {', '.join(body['duplicate_of'])}")
+    return "\n".join(lines)
+
+
+def _render_sla_table(body: dict) -> str:
+    """Presentación humana de la auditoría de SLA (no es contrato, spec 003 FR-020)."""
+    state = "resuelto" if body["resolved_at_reference"] else "no resuelto"
+    header = (
+        f"{'ID':<14} | {'Sev':<3} | {'Minutos':>7} | {'Límite':>6} | {'Restantes':>9} | "
+        f"{'Incumplido':<10} | {'Escalar':<7} | Estado en el instante"
+    )
+    row = (
+        f"{body['incident_id']:<14} | {body['severity']:<3} | {body['elapsed_minutes']:>7} | "
+        f"{body['allowed_minutes']:>6} | {body['remaining_minutes']:>9} | {_yes_no(body['is_breached']):<10} | "
+        f"{_yes_no(body['requires_escalation']):<7} | {state}"
+    )
+    rule = "-" * len(header)
+    return "\n".join([f"Instante: {body['reference_time']}", header, rule, row, rule])
 
 
 def create_cli(service_factory: ServiceFactory) -> typer.Typer:
@@ -178,6 +221,82 @@ def create_cli(service_factory: ServiceFactory) -> typer.Typer:
             typer.echo(json.dumps(summary_to_contract(result), ensure_ascii=False))
         else:
             typer.echo(_render_summary_table(result))
+
+    @app.command("create")
+    def create(
+        title: Annotated[str, typer.Option("--title", help="Título del incidente (1–200 caracteres).")],
+        raw_text: Annotated[str, typer.Option("--raw-text", help="Texto crudo del reporte (1–5 000 caracteres).")],
+        incident_id: Annotated[
+            Optional[str],
+            typer.Option("--incident-id", help="Identificador INC-…; si se omite, se genera INC-<HEX8>."),
+        ] = None,
+        created_at: Annotated[
+            Optional[str], typer.Option("--created-at", help="Instante ISO-8601 de creación (naive = Bogotá).")
+        ] = None,
+        status: Annotated[
+            Optional[str],
+            typer.Option("--status", help="OPEN (por defecto), IN_PROGRESS, ESCALATION_REQUIRED o RESOLVED."),
+        ] = None,
+        resolved_at: Annotated[
+            Optional[str], typer.Option("--resolved-at", help="Instante ISO-8601 de resolución; exige RESOLVED.")
+        ] = None,
+        output_format: Annotated[
+            OutputFormat, typer.Option("--format", help="table (por defecto) o json (mismo cuerpo que HTTP).")
+        ] = OutputFormat.table,
+    ) -> None:
+        """Crea un incidente con el mismo caso de uso que el canal HTTP y avisa si duplica uno abierto."""
+        service = _build_service(service_factory, None)
+        try:
+            creation = service.create_incident(
+                CreateIncidentInput(
+                    title=title,
+                    raw_text=raw_text,
+                    incident_id=incident_id,
+                    created_at=parse_instant(created_at, "created_at"),
+                    status=status,
+                    resolved_at=parse_instant(resolved_at, "resolved_at"),
+                )
+            )
+        except TriageValidationError as exc:
+            raise _fail(f"error [{exc.code}] {exc.field or '-'}: {exc.message}", EXIT_INVALID_INPUT)
+        except IncidentIdConflictError as exc:
+            raise _fail(f"error [incident_id_conflict] incident_id: {exc}", EXIT_INVALID_INPUT)
+        except Exception as exc:  # noqa: BLE001 — nunca se imprimen título ni texto (spec 003 FR-021).
+            raise _fail(f"error [internal_error]: {type(exc).__name__}", EXIT_INTERNAL_ERROR)
+
+        body = creation_to_contract(creation)
+        if output_format is OutputFormat.json:
+            typer.echo(json.dumps(body, ensure_ascii=False))
+        else:
+            typer.echo(_render_creation_table(body))
+
+    @app.command("sla")
+    def sla(
+        incident_id: Annotated[str, typer.Argument(help="Identificador del incidente a auditar.")],
+        reference_time: Annotated[
+            Optional[str],
+            typer.Option("--reference-time", help="Instante ISO-8601 a evaluar (naive = Bogotá); por defecto, ahora."),
+        ] = None,
+        output_format: Annotated[
+            OutputFormat, typer.Option("--format", help="table (por defecto) o json (mismo cuerpo que HTTP).")
+        ] = OutputFormat.table,
+    ) -> None:
+        """Audita el SLA de un incidente con el mismo caso de uso que el canal HTTP."""
+        service = _build_service(service_factory, None)
+        try:
+            audit = service.evaluate_incident_sla(incident_id, parse_reference_time(reference_time))
+        except TriageValidationError as exc:
+            raise _fail(f"error [{exc.code}] {exc.field or '-'}: {exc.message}", EXIT_INVALID_INPUT)
+        except IncidentNotFoundError as exc:
+            raise _fail(f"error [incident_not_found] incident_id: {exc}", EXIT_INVALID_INPUT)
+        except Exception as exc:  # noqa: BLE001 — nunca se imprimen títulos (spec 003 FR-021).
+            raise _fail(f"error [internal_error]: {type(exc).__name__}", EXIT_INTERNAL_ERROR)
+
+        body = sla_audit_to_contract(audit)
+        if output_format is OutputFormat.json:
+            typer.echo(json.dumps(body, ensure_ascii=False))
+        else:
+            typer.echo(_render_sla_table(body))
 
     return app
 

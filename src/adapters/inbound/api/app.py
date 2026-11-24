@@ -1,13 +1,16 @@
-"""Adaptador HTTP del triaje (spec 001 §6) y del resumen de activos (spec 002) sobre FastAPI.
+"""Adaptador HTTP del triaje (spec 001 §6), del resumen de activos (spec 002) y de la
+creación y auditoría de SLA de incidentes (spec 003) sobre FastAPI.
 
-Solo traduce: petición → llamada a `IncidentService` y resultado → `to_contract` o
-`summary_to_contract`. No contiene reglas de triaje, SLA ni duplicados (Constitución
-Art. 2.4).
+Solo traduce: petición → llamada a `IncidentService` y resultado → `to_contract`,
+`summary_to_contract`, `creation_to_contract` o `sla_audit_to_contract`. No contiene
+reglas de triaje, SLA ni duplicados (Constitución Art. 2.4).
 
-Reparto de errores (spec 001 D11, spec 002 FR-012):
+Reparto de errores (spec 001 D11, spec 002 FR-012, spec 003 FR-016–FR-018):
 - `400`: la petición no es interpretable (JSON roto, tipo incorrecto, campo o parámetro
   desconocido o reservado).
+- `404`: el incidente auditado no existe (`incident_not_found`).
 - `405`: método no permitido, con la envoltura de error común.
+- `409`: el identificador enviado ya existe (`incident_id_conflict`).
 - `422`: la petición es interpretable pero su contenido es inaceptable (lo decide el caso
   de uso con `ValidationError`, o una fecha no parseable).
 """
@@ -26,16 +29,26 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.adapters.inbound.api.schemas import (
     ActiveIncidentsSummaryResponse,
+    CreateIncidentRequest,
     ErrorEnvelope,
     HealthResponse,
+    IncidentCreatedResponse,
+    SLAEvaluationResponse,
+    SLAQueryParams,
     SummaryQueryParams,
     TriageRequest,
     TriageResponse,
 )
+from src.application.ports import IncidentIdConflictError
 from src.application.services import (
+    CreateIncidentInput,
+    IncidentNotFoundError,
     IncidentService,
     ReportInput,
+    creation_to_contract,
+    parse_instant,
     parse_reference_time,
+    sla_audit_to_contract,
     summary_to_contract,
     to_contract,
 )
@@ -43,7 +56,11 @@ from src.application.services import ValidationError as TriageValidationError
 
 logger = logging.getLogger(__name__)
 
+INCIDENTS_PATH = "/api/v1/incidents"
+
+# Campos reservados por ruta: el triaje los asigna y el cliente no puede enviarlos.
 _RESERVED_FIELDS = frozenset({"incident_id"})
+_CREATE_RESERVED_FIELDS = frozenset({"severity", "component", "recommended_team", "action", "duplicate_group_key"})
 _LOCATION_PREFIXES = frozenset({"body", "query"})
 
 
@@ -74,14 +91,16 @@ def _format_loc(loc: Sequence[Any]) -> Optional[str]:
     return text
 
 
-def _classify_request_error(errors: Sequence[dict]) -> Tuple[int, str, str, Optional[str]]:
+def _classify_request_error(
+    errors: Sequence[dict], reserved: frozenset = _RESERVED_FIELDS
+) -> Tuple[int, str, str, Optional[str]]:
     """Elige estado, `code`, mensaje y campo a partir del primer error relevante de pydantic."""
     for err in errors:
         if err.get("type") == "json_invalid":
             return 400, "invalid_json", "El cuerpo no es JSON válido.", None
     for err in errors:
         loc = err.get("loc", ())
-        if err.get("type") == "extra_forbidden" and loc and loc[-1] in _RESERVED_FIELDS:
+        if err.get("type") == "extra_forbidden" and loc and loc[-1] in reserved:
             return 400, "reserved_field", f"El campo '{loc[-1]}' está reservado y no forma parte del contrato.", _format_loc(loc)
     for err in errors:
         loc = err.get("loc", ())
@@ -106,9 +125,20 @@ def create_app(service: IncidentService) -> FastAPI:
     )
 
     @app.exception_handler(RequestValidationError)
-    async def _on_request_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
-        status, code, message, field = _classify_request_error(exc.errors())
+    async def _on_request_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # Los campos reservados de la creación solo se aplican a su ruta: así los códigos de
+        # `POST /v1/triage` no cambian.
+        reserved = _CREATE_RESERVED_FIELDS if request.url.path == INCIDENTS_PATH else _RESERVED_FIELDS
+        status, code, message, field = _classify_request_error(exc.errors(), reserved)
         return _error_response(status, code, message, field)
+
+    @app.exception_handler(IncidentIdConflictError)
+    async def _on_id_conflict(_: Request, exc: IncidentIdConflictError) -> JSONResponse:
+        return _error_response(409, "incident_id_conflict", str(exc), "incident_id")
+
+    @app.exception_handler(IncidentNotFoundError)
+    async def _on_not_found(_: Request, exc: IncidentNotFoundError) -> JSONResponse:
+        return _error_response(404, "incident_not_found", str(exc), "incident_id")
 
     @app.exception_handler(StarletteHTTPException)
     async def _on_http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
@@ -127,7 +157,7 @@ def create_app(service: IncidentService) -> FastAPI:
     async def _on_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
         # Nunca se registra el cuerpo ni `raw_text` (spec 001 §6.4).
         logger.error("Fallo interno en %s %s: %s", request.method, request.url.path, type(exc).__name__)
-        return _error_response(500, "internal_error", "Error interno al clasificar el lote.")
+        return _error_response(500, "internal_error", "Error interno al procesar la petición.")
 
     @app.get("/v1/health", response_model=HealthResponse)
     def health() -> dict:
@@ -168,5 +198,63 @@ def create_app(service: IncidentService) -> FastAPI:
             (time.perf_counter() - started) * 1000,
         )
         return body
+
+    @app.post(
+        INCIDENTS_PATH,
+        status_code=201,
+        response_model=IncidentCreatedResponse,
+        responses={
+            400: {"model": ErrorEnvelope},
+            405: {"model": ErrorEnvelope},
+            409: {"model": ErrorEnvelope},
+            422: {"model": ErrorEnvelope},
+            500: {"model": ErrorEnvelope},
+        },
+    )
+    def create_incident(request: CreateIncidentRequest) -> dict:
+        """Crea un incidente clasificado y avisa si duplica uno abierto (spec 003 US1–US2)."""
+        started = time.perf_counter()
+        creation = service.create_incident(
+            CreateIncidentInput(
+                title=request.title,
+                raw_text=request.raw_text,
+                incident_id=request.incident_id,
+                created_at=parse_instant(request.created_at, "created_at"),
+                status=request.status,
+                resolved_at=parse_instant(request.resolved_at, "resolved_at"),
+            )
+        )
+        # Solo identificador, aviso, duración y código: nunca título ni texto (spec 003 FR-021).
+        logger.info(
+            "Incidente creado: incident_id=%s is_duplicate=%s duplicados=%d duracion_ms=%.1f codigo=201",
+            creation.incident.incident_id,
+            creation.is_duplicate,
+            len(creation.duplicate_of),
+            (time.perf_counter() - started) * 1000,
+        )
+        return creation_to_contract(creation)
+
+    @app.get(
+        INCIDENTS_PATH + "/{incident_id}/sla",
+        response_model=SLAEvaluationResponse,
+        responses={
+            400: {"model": ErrorEnvelope},
+            404: {"model": ErrorEnvelope},
+            405: {"model": ErrorEnvelope},
+            422: {"model": ErrorEnvelope},
+            500: {"model": ErrorEnvelope},
+        },
+    )
+    def incident_sla(incident_id: str, params: Annotated[SLAQueryParams, Query()]) -> dict:
+        """Audita el SLA de un incidente en un instante, sin modificar nada (spec 003 US3)."""
+        started = time.perf_counter()
+        audit = service.evaluate_incident_sla(incident_id, parse_reference_time(params.reference_time))
+        # Solo identificador, duración y código: nunca títulos (spec 003 FR-021).
+        logger.info(
+            "Auditoría de SLA: incident_id=%s duracion_ms=%.1f codigo=200",
+            incident_id,
+            (time.perf_counter() - started) * 1000,
+        )
+        return sla_audit_to_contract(audit)
 
     return app

@@ -30,27 +30,43 @@ def evaluate_sla_status(
     incident: Incident,
     reference_time: datetime,
 ) -> SLAEvaluation:
-    """Evalúa el incumplimiento del SLA y la necesidad de escalamiento.
+    """Evalúa el incumplimiento del SLA y la necesidad de escalamiento en un instante.
 
     P0/P1: contabilizan tiempo calendario 24x7.
     P2/P3: contabilizan únicamente tiempo hábil colombiano.
 
+    Las tres marcas (creación, resolución y referencia) se normalizan a hora de Bogotá
+    (Art. 1.7: naive = Bogotá), así que se pueden mezclar valores naive y aware. La
+    evaluación se reconstruye en `reference_time` (spec 003 FR-015): el incidente cuenta
+    como resuelto solo si su resolución ocurrió en ese instante o antes, el tiempo se mide
+    hasta el primero de ambos instantes y el escalamiento depende de ese estado, no de
+    `status` (Art. 1.8, Constitución 3.0.0).
+
     Args:
         incident: Entidad del incidente a evaluar.
-        reference_time: Marca de tiempo actual o de cierre contra la cual medir.
+        reference_time: Instante en el que se evalúa el SLA.
 
     Returns:
         SLAEvaluation con los minutos transcurridos, restantes y banderas de estado.
+
+    Raises:
+        ValueError: si `reference_time` es anterior a la creación.
     """
     rule = get_sla_rule_for_severity(incident.severity)
 
     start_time = to_bogota(incident.created_at)
-    end_time = to_bogota(incident.resolved_at or reference_time)
+    reference = to_bogota(reference_time)
+    resolved_at = to_bogota(incident.resolved_at) if incident.resolved_at is not None else None
 
-    if end_time < start_time:
+    if reference < start_time:
         raise ValueError(
             "El tiempo de referencia no puede ser anterior a la creación."
         )
+
+    resolved_at_reference = resolved_at is not None and resolved_at <= reference
+    end_time = resolved_at if resolved_at_reference else reference
+    if end_time < start_time:
+        raise ValueError("La resolución no puede ser anterior a la creación.")
 
     if rule.operates_24x7:
         delta_seconds = (end_time - start_time).total_seconds()
@@ -69,7 +85,7 @@ def evaluate_sla_status(
     )
 
     requires_escalation = (
-        incident.status != "RESOLVED"
+        not resolved_at_reference
         and not is_breached
         and elapsed_minutes >= escalation_limit
     )
@@ -82,4 +98,5 @@ def evaluate_sla_status(
         remaining_minutes=remaining_minutes,
         is_breached=is_breached,
         requires_escalation=requires_escalation,
+        resolved_at_reference=resolved_at_reference,
     )

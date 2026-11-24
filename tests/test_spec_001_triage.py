@@ -143,12 +143,12 @@ def test_e3b_etiqueta_vacia_por_cli_termina_con_codigo_3(runner, cli_app):
     """
     Given una invocación triage --incident-id "" --raw-text "..."
     When  se ejecuta
-    Then  termina con código 3, escribe el diagnóstico por stderr y no imprime
+    Then  termina con código 1, escribe el diagnóstico por stderr y no imprime
           resultado por stdout
     """
     result = runner.invoke(cli_app, ["triage", "--incident-id", "", "--raw-text", CUENTA_BLOQUEADA])
 
-    assert result.exit_code == 3
+    assert result.exit_code == 1  # Antes 3; enmienda de spec 001 §7 por spec 003 D8.
     assert result.stderr.strip() != ""
     assert result.stdout == ""
 

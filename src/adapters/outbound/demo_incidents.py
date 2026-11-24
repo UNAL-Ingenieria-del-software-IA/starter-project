@@ -20,11 +20,13 @@ Evaluado a `2026-11-24T09:00:00-05:00` (martes):
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from typing import Tuple
 
 from src.application.ports import IncidentRepositoryPort
-from src.domain.models import Incident
+from src.domain.models import Incident, IncidentReport
+from src.domain.triage_rules import classify_incident
 from src.domain.working_time_calculator import BOGOTA_TZ
 
 
@@ -51,6 +53,19 @@ DEMO_INCIDENTS: Tuple[Incident, ...] = (
 
 
 def seed_demo_incidents(repository: IncidentRepositoryPort) -> None:
-    """Guarda el conjunto fijo de demostración por el puerto."""
+    """Guarda el conjunto fijo de demostración por el puerto.
+
+    La clave de grupo y el equipo de cada demo los deriva el dominio aplicando el triaje a
+    su título (spec 003 research §R9): así `INC-2001` queda con `payment-availability` sin
+    escribir claves a mano. Severidad, componente, estado e instantes son los de las
+    constantes, que son el contrato de demostración de spec 002.
+    """
     for incident in DEMO_INCIDENTS:
-        repository.save_incident(incident)
+        triage = classify_incident(IncidentReport(incident.incident_id, incident.title, incident.created_at))
+        repository.save_incident(
+            replace(
+                incident,
+                recommended_team=triage.recommended_team,
+                duplicate_group_key=triage.duplicate_group_key,
+            )
+        )

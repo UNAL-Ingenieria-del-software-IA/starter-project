@@ -48,7 +48,12 @@ class SLARule:
 
 @dataclass
 class Incident:
-    """Representa un incidente registrado en la plataforma IncidentOps."""
+    """Representa un incidente registrado en la plataforma IncidentOps.
+
+    `recommended_team` y `duplicate_group_key` (spec 003) los asigna el triaje al crear el
+    incidente; van al final y con valor por defecto para conservar la construcción
+    posicional previa. Son `None` en datos anteriores a H003.
+    """
 
     incident_id: str
     title: str
@@ -57,11 +62,17 @@ class Incident:
     status: IncidentStatus
     created_at: datetime
     resolved_at: Optional[datetime] = None
+    recommended_team: Optional[TeamName] = None
+    duplicate_group_key: Optional[str] = None
 
 
 @dataclass(frozen=True)
 class SLAEvaluation:
-    """Resultado determinista de la evaluación de SLA de un incidente."""
+    """Resultado determinista de la evaluación de SLA de un incidente.
+
+    `resolved_at_reference` indica si el incidente ya estaba resuelto en el instante
+    evaluado (spec 003 FR-015).
+    """
 
     incident_id: str
     severity: SeverityLevel
@@ -70,6 +81,7 @@ class SLAEvaluation:
     remaining_minutes: int
     is_breached: bool
     requires_escalation: bool
+    resolved_at_reference: bool = False
 
 
 @dataclass(frozen=True)

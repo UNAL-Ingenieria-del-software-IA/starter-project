@@ -1,0 +1,149 @@
+openapi: 3.1.0
+info:
+  title: IncidentOps — Creación de incidentes y auditoría de SLA (spec 003)
+  version: 0.3.0
+  description: >
+    Contrato HTTP de spec 003. El cuerpo JSON de cada respuesta exitosa es idéntico, campo
+    a campo, al `--format json` de los subcomandos CLI `create` y `sla` (FR-020). Los
+    errores usan la envoltura común de H001. Servicio en loopback, sin autenticación.
+paths:
+  /api/v1/incidents:
+    post:
+      operationId: createIncident
+      summary: Crea un incidente clasificado y avisa si duplica uno abierto.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateIncidentRequest" }
+            example:
+              title: Caída de la pasarela de pagos
+              raw_text: La pasarela de pagos está caída, ningún cliente puede pagar
+              created_at: "2026-11-24T09:20:00"
+      responses:
+        "201":
+          description: Incidente creado, con o sin aviso de duplicado (FR-008, FR-010).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IncidentCreatedResponse" }
+        "400":
+          description: JSON roto, campo desconocido (`invalid_payload`) o reservado (`reserved_field`).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "405": { $ref: "#/components/responses/MethodNotAllowed" }
+        "409":
+          description: "`incident_id_conflict`: el identificador enviado ya existe; no se crea nada."
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "422":
+          description: >
+            `invalid_payload` (título/texto vacío o largo, identificador mal formado, estado o
+            resolución inválidos) o `invalid_timestamp` (instante no parseable).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/incidents/{incident_id}/sla:
+    get:
+      operationId: auditIncidentSla
+      summary: Evalúa el SLA de un incidente en un instante de referencia.
+      parameters:
+        - name: incident_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: reference_time
+          in: query
+          required: false
+          description: ISO 8601; sin zona = hora de Bogotá; admite sufijo `Z`. Por defecto, el reloj del servicio.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Evaluación canónica de SLA en el instante declarado.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SLAEvaluationResponse" }
+        "400":
+          description: Parámetro de consulta desconocido (`invalid_payload`).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "404":
+          description: "`incident_not_found`."
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "405": { $ref: "#/components/responses/MethodNotAllowed" }
+        "422":
+          description: "`invalid_timestamp` o `reference_before_creation` (reference_time < created_at)."
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+        "500": { $ref: "#/components/responses/InternalError" }
+components:
+  responses:
+    MethodNotAllowed:
+      description: "`method_not_allowed`."
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+    InternalError:
+      description: "`internal_error`; nunca expone el cuerpo ni el texto del reporte."
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+  schemas:
+    CreateIncidentRequest:
+      type: object
+      additionalProperties: false
+      required: [title, raw_text]
+      properties:
+        title: { type: string, description: "1–200 caracteres, no solo espacios." }
+        raw_text: { type: string, description: "1–5 000 caracteres, no solo espacios." }
+        incident_id: { type: string, description: "Opcional; ^INC-[A-Za-z0-9-]{1,32}$. Si falta, INC-<HEX8>." }
+        created_at: { type: string, description: "Opcional; ISO 8601. Si falta, el reloj del servicio." }
+        status:
+          type: string
+          enum: [OPEN, IN_PROGRESS, ESCALATION_REQUIRED, RESOLVED]
+          default: OPEN
+        resolved_at: { type: string, description: "Obligatorio si y solo si status = RESOLVED; >= created_at." }
+    IncidentCreatedResponse:
+      type: object
+      additionalProperties: false
+      required: [incident_id, title, status, created_at, resolved_at, severity, component,
+                 recommended_team, action, duplicate_group_key, analysis, is_duplicate, duplicate_of]
+      properties:
+        incident_id: { type: string }
+        title: { type: string }
+        status: { type: string, enum: [OPEN, IN_PROGRESS, ESCALATION_REQUIRED, RESOLVED] }
+        created_at: { type: string, format: date-time, description: "ISO con desfase -05:00." }
+        resolved_at: { type: [string, "null"], format: date-time }
+        severity: { type: string, enum: [P0, P1, P2, P3] }
+        component: { type: string }
+        recommended_team: { type: string, enum: [Backend-Core, Platform-SRE, Data-DBA, Security-IAM] }
+        action: { type: string }
+        duplicate_group_key: { type: [string, "null"] }
+        analysis: { type: array, items: { type: string } }
+        is_duplicate: { type: boolean, description: "true si y solo si duplicate_of no está vacío." }
+        duplicate_of:
+          type: array
+          items: { type: string }
+          description: Abiertos con la misma clave no nula, sin el propio; por created_at y luego incident_id.
+    SLAEvaluationResponse:
+      type: object
+      additionalProperties: false
+      required: [incident_id, title, component, severity, status, created_at, resolved_at,
+                 reference_time, resolved_at_reference, elapsed_minutes, allowed_minutes,
+                 remaining_minutes, is_breached, requires_escalation]
+      properties:
+        incident_id: { type: string }
+        title: { type: string }
+        component: { type: string }
+        severity: { type: string, enum: [P0, P1, P2, P3] }
+        status: { type: string, enum: [OPEN, IN_PROGRESS, ESCALATION_REQUIRED, RESOLVED] }
+        created_at: { type: string, format: date-time }
+        resolved_at: { type: [string, "null"], format: date-time }
+        reference_time: { type: string, format: date-time, description: "Instante evaluado, truncado a segundos." }
+        resolved_at_reference: { type: boolean }
+        elapsed_minutes: { type: integer }
+        allowed_minutes: { type: integer }
+        remaining_minutes: { type: integer, description: "Puede ser negativo si hay incumplimiento." }
+        is_breached: { type: boolean }
+        requires_escalation: { type: boolean }
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            field: { type: string }

@@ -1,4 +1,4 @@
-"""DTO del canal HTTP (spec 001 §5 y §6.3; spec 002, contrato del resumen).
+"""DTO del canal HTTP (spec 001 §5 y §6.3; spec 002, contrato del resumen; spec 003, creación y SLA).
 
 Solo describen la forma del contrato: los valores válidos de severidad, estado, equipo,
 acción y tipo de duplicado se toman de los `Literal` del dominio, nunca se redefinen aquí
@@ -88,6 +88,69 @@ class ActiveIncidentsSummaryResponse(BaseModel):
     total_active: int
     breached_count: int
     incidents: List[ActiveIncidentItem]
+
+
+class CreateIncidentRequest(BaseModel):
+    """Cuerpo de `POST /api/v1/incidents` (spec 003 FR-002).
+
+    Todo llega como texto: longitudes, forma del identificador, estado e instantes los
+    valida el servicio, igual que en el CLI (paridad de aceptación y rechazo). Un campo
+    desconocido o reservado (lo asigna el triaje) se rechaza con 400.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: StrictStr
+    raw_text: StrictStr
+    incident_id: Optional[StrictStr] = None
+    created_at: Optional[StrictStr] = None
+    status: Optional[StrictStr] = None
+    resolved_at: Optional[StrictStr] = None
+
+
+class IncidentCreatedResponse(BaseModel):
+    """Respuesta `201` de la creación; idéntica al `create --format json` del CLI (FR-020)."""
+
+    incident_id: str
+    title: str
+    status: IncidentStatus
+    created_at: str = Field(json_schema_extra={"format": "date-time"})
+    resolved_at: Optional[str] = Field(json_schema_extra={"format": "date-time"})
+    severity: SeverityLevel
+    component: str
+    recommended_team: TeamName
+    action: TriageAction
+    duplicate_group_key: Optional[str]
+    analysis: List[str]
+    is_duplicate: bool
+    duplicate_of: List[str]
+
+
+class SLAQueryParams(BaseModel):
+    """Parámetros de `GET /api/v1/incidents/{incident_id}/sla`. Uno desconocido se rechaza con 400."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reference_time: Optional[StrictStr] = None
+
+
+class SLAEvaluationResponse(BaseModel):
+    """Respuesta `200` de la auditoría de SLA; idéntica al `sla --format json` del CLI."""
+
+    incident_id: str
+    title: str
+    component: str
+    severity: SeverityLevel
+    status: IncidentStatus
+    created_at: str = Field(json_schema_extra={"format": "date-time"})
+    resolved_at: Optional[str] = Field(json_schema_extra={"format": "date-time"})
+    reference_time: str = Field(json_schema_extra={"format": "date-time"})
+    resolved_at_reference: bool
+    elapsed_minutes: int
+    allowed_minutes: int
+    remaining_minutes: int
+    is_breached: bool
+    requires_escalation: bool
 
 
 class ErrorBody(BaseModel):

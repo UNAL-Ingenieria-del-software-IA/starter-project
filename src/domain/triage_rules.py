@@ -373,6 +373,28 @@ def _classify_single(report: IncidentReport) -> _Draft:
     return _Draft(report, signals, decision, component, team, action)
 
 
+PERFORMANCE_GROUP_KEY = "database-performance-investigation"
+
+
+def group_key_for(component: str, signals: IncidentSignals) -> Optional[str]:
+    """Clave de grupo de duplicados de **un** reporte, con las formas canónicas del Art. 1.11.
+
+    - `<prefijo-componente>-availability` para una caída de un componente clasificado;
+    - `database-performance-investigation` para degradación con firma de volumen o presión
+      sobre la base de datos (causa raíz compartida de rendimiento/BD);
+    - `None` en cualquier otro caso.
+
+    La correlación por lote usa las mismas formas, pero solo las asigna con ≥ 2 miembros.
+    """
+    if signals.service_outage and component != "unclassified":
+        return f"{component.split('-')[0]}-availability"
+    if component == "application-performance" and signals.high_data_volume:
+        return PERFORMANCE_GROUP_KEY
+    if component == "database-cluster" and signals.infra_saturated:
+        return PERFORMANCE_GROUP_KEY
+    return None
+
+
 def _correlate_availability(drafts: Sequence[_Draft]) -> None:
     """Agrupa caídas del mismo componente y decide duplicado exacto vs. recurrencia."""
     by_component: Dict[str, List[_Draft]] = {}
@@ -384,7 +406,7 @@ def _correlate_availability(drafts: Sequence[_Draft]) -> None:
         if len(members) < 2:
             continue
         ids = ", ".join(m.report.incident_id for m in members)
-        group_key = f"{component.split('-')[0]}-availability"
+        group_key = group_key_for(component, members[0].signals)
         timestamps = [m.report.created_at for m in members]
         has_marker = any(m.signals.recurrence_marker for m in members)
 
@@ -436,7 +458,7 @@ def _correlate_performance(drafts: Sequence[_Draft]) -> None:
     perf_ids = " y ".join(p.report.incident_id for p in perf)
 
     for m in members:
-        m.group_key, m.duplicate_type, m.merge = "database-performance-investigation", "related_incidents", False
+        m.group_key, m.duplicate_type, m.merge = PERFORMANCE_GROUP_KEY, "related_incidents", False
         if m in perf:
             m.action = "investigate_shared_root_cause"
             note = (
@@ -499,6 +521,18 @@ def classify_incident_batch(reports: Sequence[IncidentReport]) -> List[TriageRes
     _correlate_availability(drafts)
     _correlate_performance(drafts)
     return [_build_result(d) for d in drafts]
+
+
+def classify_incident(report: IncidentReport) -> TriageResult:
+    """Clasifica un reporte suelto con su clave de grupo candidata (spec 003 D10, FR-023).
+
+    Mismo pipeline que el lote, sin correlación: `duplicate_type="none"` y `merge=False`.
+    La clave es la que el reporte compartiría con otros del mismo problema; quien decide
+    si hay duplicado abierto la compara por igualdad.
+    """
+    draft = _classify_single(report)
+    draft.group_key = group_key_for(draft.component, draft.signals)
+    return _build_result(draft)
 
 
 def classify_incident_report(incident_id: str, raw_text: str) -> TriageResult:

@@ -6,7 +6,6 @@ lo usan para que el servicio no necesite condicionales por canal ni una base de 
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional, Sequence
 
 from src.domain.models import Incident
@@ -18,12 +17,13 @@ class NullIncidentRepository:
     def save_incident(self, incident: Incident) -> None:
         return None
 
+    def add_incident(self, incident: Incident) -> None:
+        return None
+
     def get_incident(self, incident_id: str) -> Optional[Incident]:
         return None
 
-    def find_open_duplicates(
-        self, component: str, created_from: datetime, created_to: datetime
-    ) -> Sequence[Incident]:
+    def find_open_duplicates(self, duplicate_group_key: str, exclude_incident_id: str) -> Sequence[Incident]:
         return ()
 
     def list_active_incidents(self, component: Optional[str] = None) -> Sequence[Incident]:
