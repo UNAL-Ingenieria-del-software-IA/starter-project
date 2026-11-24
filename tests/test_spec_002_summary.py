@@ -773,8 +773,11 @@ def test_e11b_parametro_desconocido(args):
     cli = runner.invoke(cli_app, args)
 
     assert http.status_code == 400
-    assert http.json()["error"]["code"] == "invalid_payload"
-    assert http.json()["error"]["field"] == "componente"
+    assert http.json()["error"] == {
+        "code": "invalid_payload",
+        "message": "Los parámetros de consulta no cumplen el contrato de la petición.",
+        "field": "componente",
+    }
     assert cli.exit_code == 2
     assert cli.stdout == ""
 

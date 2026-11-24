@@ -88,7 +88,10 @@ def _classify_request_error(errors: Sequence[dict]) -> Tuple[int, str, str, Opti
         if loc and loc[-1] == "created_at" and str(err.get("type", "")).startswith("datetime"):
             return 422, "invalid_timestamp", "`created_at` no es una fecha ISO-8601 válida.", _format_loc(loc)
     first = errors[0] if errors else {}
-    return 400, "invalid_payload", "El cuerpo no cumple el contrato de la petición.", _format_loc(first.get("loc", ()))
+    loc = first.get("loc", ())
+    if loc and loc[0] == "query":
+        return 400, "invalid_payload", "Los parámetros de consulta no cumplen el contrato de la petición.", _format_loc(loc)
+    return 400, "invalid_payload", "El cuerpo no cumple el contrato de la petición.", _format_loc(loc)
 
 
 def create_app(service: IncidentService) -> FastAPI:
