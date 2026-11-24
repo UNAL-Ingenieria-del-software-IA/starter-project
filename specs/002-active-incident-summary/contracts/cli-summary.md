@@ -33,6 +33,7 @@ uv run python -X utf8 -m src.adapters.inbound.cli summary
 | `2` | Bandera desconocida o `--format` inválido (Click/Typer) | Uso de Click |
 | `3` | `--reference-time` no parseable o `--component` vacío | `error [<code>] <campo>: <mensaje>` |
 | `4` | Fallo inesperado | `error [internal_error]: <TipoDeExcepción>` |
+| `4` | Configuración inválida (`DATABASE_URL` no soportada); aplica también a `triage` | `error [internal_error]: <mensaje>` (nombra solo el esquema, nunca la URL) |
 
 `stdout` lleva solo el resultado; `stderr`, solo diagnósticos. Nunca se imprimen títulos
 en `stderr` (FR-015).

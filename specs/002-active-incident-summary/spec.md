@@ -440,8 +440,10 @@ mensajes van en español para humanos; `code` es estable para el cliente.
 
 ### Resultados medibles
 
-- **SC-001**: Un operador obtiene el resumen completo de 10 000 incidentes activos en
-  menos de 1 segundo (percentil 95) por cualquiera de los dos canales.
+- **SC-001**: Con 10 000 incidentes activos en el almacén, una consulta del resumen tarda
+  menos de 1 segundo por cada canal, medida en proceso (HTTP con el cliente de pruebas,
+  CLI con el ejecutor de Typer) y sin contar el arranque del intérprete. El arnés de
+  benchmark reporta además el percentil 95 del caso de uso sobre 20 consultas.
 - **SC-002**: Para el mismo almacén y el mismo instante de referencia, HTTP y CLI
   coinciden en el 100 % de los campos del contrato y en el orden del detalle, sin
   discrepancias en la suite de referencia.

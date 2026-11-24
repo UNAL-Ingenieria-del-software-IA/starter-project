@@ -112,8 +112,9 @@ Remove-Item Env:DATABASE_URL
 ```
 
 **Esperado**: con archivo, esquema creado y resumen vacío (no se siembra, `0`); con un
-esquema no soportado, fallo temprano con mensaje en español que nombra el esquema sin
-repetir la URL. Borrar `tmp-h002.db` al terminar.
+esquema no soportado, el CLI termina con código `4` y `error [internal_error]: <mensaje>`
+en `stderr`, sin traceback, y `uvicorn` falla al arrancar; en ambos casos el mensaje en
+español nombra el esquema sin repetir la URL. Borrar `tmp-h002.db` al terminar.
 
 ## 6. Rendimiento (SC-001)
 

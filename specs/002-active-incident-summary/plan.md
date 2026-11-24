@@ -65,8 +65,9 @@ red. Oráculos de dominio `_run_demo()` y auditoría de triaje sin cambios.
 
 **Tipo de proyecto**: servicio web + CLI sobre un núcleo de dominio compartido.
 
-**Objetivos de rendimiento**: SC-001 — resumen de 10 000 activos en < 1 s (p95) por
-canal. Prototipo medido (ver [research.md](research.md#r3)): 12 857 activos leídos y
+**Objetivos de rendimiento**: SC-001 — resumen de 10 000 activos en < 1 s por canal,
+medido en proceso (`TestClient` y `CliRunner`, sin arranque del intérprete); el arnés
+reporta además el p95 del caso de uso. Prototipo medido (ver [research.md](research.md#r3)): 12 857 activos leídos y
 evaluados en ~195 ms con el índice propuesto.
 
 **Restricciones**: dominio puro y determinista (Art. 1.2–1.3); `sqlite3` con `?`, sin ORM
@@ -94,7 +95,7 @@ Se evalúa contra ambos textos constitucionales. Notación: «docs» = `docs/con
 | G2 | docs 1.10 · spec-kit 1.10 | «Activo = distinto de `RESOLVED`» contradice el texto vigente. | ⚠️ Desviación declarada | ⚠️ Se cierra con la Fase A (enmienda + ADR-005 + `AGENTS.md`). FR-002 bloqueado hasta entonces. |
 | G3 | docs 1.12 · spec-kit 1.12 | Añadir constantes al dominio exige `_run_demo`, auditoría y BDD en verde en el mismo cambio. Ninguna regla de triaje ni SLA cambia. | ✅ | ✅ |
 | G4 | docs 2.1 · spec-kit 2.1 | `adapters → application → domain`; solo `src/main.py` conoce `SQLiteIncidentRepository`, `NullIncidentRepository` y `create_incident_repository`. | ✅ | ✅ (AST + Ruff) |
-| G5 | docs 2.4 · spec-kit III.2 | El puerto gana dos métodos fuera del catálogo mínimo (`get_incident`, `check_health`). III.2 exige justificarlo en ADR o especificación. | ⚠️ | ✅ Justificado en ADR-006 (Fase F) y en [research.md](research.md#r7). |
+| G5 | docs 2.4 · spec-kit III.2 | El puerto gana dos métodos fuera del catálogo mínimo (`get_incident`, `check_health`). III.2 exige justificarlo en ADR o especificación. | ⚠️ | ✅ Justificado en ADR-006, creado junto con el puerto (Fase C, T013), y en [research.md](research.md#r7). |
 | G6 | spec-kit III.3 | El puerto expone solo `Incident`, `str`, `datetime`, `bool`; nada de `sqlite3.Row`, tablas ni DSN. | ✅ | ✅ |
 | G7 | spec-kit III.4 | Triaje sin efectos con `NullIncidentRepository`; sin condicionales de canal en el servicio. | ✅ | ✅ |
 | G8 | spec-kit III.5 | `DATABASE_URL` se lee solo en `src/main.py`; la fábrica recibe la URL como argumento y no lee el entorno. | ✅ | ✅ (Ruff prohíbe `os` en `domain`/`application`) |
@@ -181,7 +182,7 @@ tests/
 
 docs/adr/
 ├── 0005-incidente-activo-distinto-de-resuelto.md     # NUEVO (Fase A)
-└── 0006-puerto-repositorio-y-database-url.md         # NUEVO (Fase F)
+└── 0006-puerto-repositorio-y-database-url.md         # NUEVO (Fase C, con el puerto)
 ```
 
 **Decisión de estructura**: se mantiene el proyecto único con la topología hexagonal ya
@@ -198,10 +199,10 @@ compuerta D9.
 |---|---|---|---|
 | **A — Enmienda (bloqueante)** | Art. 1.10 en `docs/constitution.md` y `.specify/memory/constitution.md` (activo = `OPEN`, `IN_PROGRESS`, `ESCALATION_REQUIRED`); versión spec-kit 1.0.0 → 2.0.0 (redefinición incompatible de un término normativo); ADR-005 aceptado que además reemplaza el predicado del índice parcial de ADR-001; `AGENTS.md`. | Propio | — |
 | **B — Ruff** | `[tool.ruff]`/`[tool.ruff.lint]` en `pyproject.toml`; `ruff.toml` en `domain`, `application`, `adapters/inbound`; corrección de `E741`; prueba de humo de frontera (ver [quickstart.md](quickstart.md)). | Propio | — (paralela a A) |
-| **C — Dominio y puerto** | `ACTIVE_STATUSES` y `SEVERITY_ORDER` en `domain/models.py`; `IncidentRepositoryPort` en `ports.py`; doble en memoria en `tests/doubles.py`. | | A |
+| **C — Dominio y puerto** | `ACTIVE_STATUSES` y `SEVERITY_ORDER` en `domain/models.py`; `IncidentRepositoryPort` en `ports.py` junto con ADR-006 (Art. III.2 exige la justificación al añadir métodos); dobles en `tests/doubles.py`. | | A |
 | **D — Adaptadores de salida** | `sqlite_repository.py`, `null_repository.py`, `demo_incidents.py`, `factory.py`; pruebas de conformidad del puerto. | | C |
 | **E — Caso de uso** | `get_active_incidents_summary`, `parse_reference_time`, `summary_to_contract`; `IncidentService(clock, repository)`; escenarios E1–E9 y E12 con el doble. | | C |
-| **F — Canales y composición** | DTO, ruta HTTP, manejador 405, subcomando `summary`; `src/main.py` con `DATABASE_URL`; arnés `src/incident_repository.py`; ADR-006; `AGENTS.md` y `README.md`; E10, E11a, E11b. | | D, E |
+| **F — Canales y composición** | DTO, ruta HTTP, manejador 405, subcomando `summary`; `src/main.py` con `DATABASE_URL` y `app` bajo demanda; errores de configuración del CLI → código `4`; arnés `src/incident_repository.py`; enmienda F3 de spec-kit (2.1.0); `AGENTS.md` y `README.md`; E10, E11a, E11b, SC-001 por canal. | | D, E |
 | **G — Verificación** | `uv run ruff check src/` → `uv run python -X utf8 -m pytest -v` → `_run_demo` → auditoría → benchmark SC-001 (ver [quickstart.md](quickstart.md)). | | F |
 
 ## Riesgos
