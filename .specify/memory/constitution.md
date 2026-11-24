@@ -1,38 +1,3 @@
-<!--
-Sync Impact Report (retirar antes de confirmar, Governance punto 4)
-- Versión: 3.0.0 → 3.1.0 (MINOR). Se amplía materialmente la guía: se admite un segundo
-  motor y una dependencia nueva. Nada que cumpliera la 3.0.0 deja de cumplir.
-- Principios modificados (sin renombrar):
-  - 1.2 Pureza: `psycopg` prohibido en `domain/`.
-  - 2.6 Adaptadores secundarios: persistencia dual SQLite/PostgreSQL, consultas
-    parametrizadas por driver, instantes ISO 8601 en texto e intercalación `C`.
-  - 3.3 Prohibiciones del puerto: tipos de `psycopg` y traducción de errores del driver.
-  - 3.5 Selección por `DATABASE_URL`: esquema `postgresql://`, la URL nunca aparece en
-    mensajes y los dos almacenes conviven.
-  - 3.6 Verificación: conformidad del puerto contra ambos adaptadores; omisión visible sin
-    PostgreSQL.
-  - 4.2 Reglas Ruff: `psycopg` vetado en `domain/`, `application/` y `adapters/inbound/`.
-- Restricciones modificadas:
-  - T2: `psycopg[binary]` en el stack.
-  - T3: dos motores; sin ORM ni capa de abstracción SQL.
-  - T4: `psycopg` confinado a `adapters/outbound/` y `tests/`.
-  - T5: el ADR de stack deja de llamarse ADR-004.
-- Governance: «Pendiente de registro» reasigna el ADR de stack a un número pendiente.
-- Secciones añadidas: ninguna. Secciones retiradas: ninguna.
-- Plantillas (.specify/templates/*): sin cambios necesarios ✅. Leen la constitución en
-  tiempo de ejecución y no fijan el motor.
-- Pendientes que rompen el cumplimiento hasta resolverse:
-  ⚠ ADR-004 figura como «Propuesto»; Governance (2) exige ADR aceptado.
-  ⚠ `docs/constitution.md` (Art. 2.6 y 3.2) aún admite solo `sqlite3` y llama ADR-004 al
-    del stack.
-  ⚠ `AGENTS.md` (Governance 3) cita ADR-004 como el ADR de stack y no menciona
-    `postgresql://`.
-  ⚠ Los `ruff.toml` de `src/domain/`, `src/application/` y `src/adapters/inbound/` aún no
-    vetan `psycopg` (Principio 4.2).
-  ⚠ ADR-001 no registra todavía el reemplazo parcial por ADR-004.
-- TODO: ninguno en el texto. El número del ADR de stack queda pendiente de forma explícita
-  en Governance.
--->
 # Constitución — IncidentOps
 
 ## Core Principles
@@ -274,7 +239,7 @@ uv run python -X utf8 -m src.sla_calculator
 uv run python -X utf8 -m src.triage_rules
 ```
 
-`src.sla_calculator` ejecuta 10 aserciones y sale con código 1 si falla. La auditoría de
+`src.sla_calculator` ejecuta 12 aserciones y sale con código 1 si falla. La auditoría de
 `src.triage_rules` se ejecuta sobre `data/sample_incidents.json` y su salida no puede
 cambiar sin enmienda de especificación.
 
@@ -340,22 +305,31 @@ uv run pytest -v
 uv run python -X utf8 -m src.sla_calculator
 uv run python -X utf8 -m src.triage_rules
 uv run uvicorn src.main:app --host 127.0.0.1 --port 8080
+docker compose up -d --build --wait
+uv run python -X utf8 -m pytest -v -m postgres
+uv run python -X utf8 -m pytest -v -m docker
 ```
+
+Los dos últimos necesitan PostgreSQL de pruebas (`INCIDENTOPS_TEST_POSTGRES_URL`) y
+Docker con Compose v2; sin ellos, sus casos se omiten de forma visible (Principio 3.6).
 
 **F3 Contrato de canales.** REST expone `POST /v1/triage`, `GET /v1/health`,
 `GET /api/v1/incidents/summary` (parámetros `component` y `reference_time`),
-`POST /api/v1/incidents` y `GET /api/v1/incidents/{incident_id}/sla` (parámetro
-`reference_time`). El CLI ejecuta:
+`POST /api/v1/incidents`, `GET /api/v1/incidents/{incident_id}/sla` (parámetro
+`reference_time`) y `GET /health` (`200 {"status":"ok","database":"connected"}` /
+`503 {"status":"error","database":"unavailable"}`, fuera del sobre común de errores).
+El CLI ejecuta:
 
 - `triage` con `--raw-text`, `--incident-id`, `--created-at`, `--now` y
   `--format table|json`;
 - `summary` con `--component`, `--reference-time` y `--format table|json`;
 - `create` con `--title`, `--raw-text`, `--incident-id`, `--created-at`, `--status`,
   `--resolved-at` y `--format table|json`;
-- `sla <incident_id>` con `--reference-time` y `--format table|json`.
+- `sla <incident_id>` con `--reference-time` y `--format table|json`;
+- `health` con `--format table|json`; códigos `0` / `4`.
 
-El JSON del resumen, de la creación y de la auditoría de SLA es el mismo cuerpo por
-ambos canales (ADR-006, spec 003). Códigos de salida del CLI: `0` correcto, `1` entrada
+El JSON del resumen, de la creación, de la auditoría de SLA y de la sonda es el mismo
+cuerpo por ambos canales (ADR-006, spec 003, spec 004). Códigos de salida del CLI: `0` correcto, `1` entrada
 inválida (incluidos incidente inexistente e identificador en conflicto), `2` error de
 uso, `4` error interno. El código `3` queda retirado. Resultados a stdout, diagnósticos
 a stderr.
@@ -416,4 +390,4 @@ edita; sus filas sobre `find_open_duplicates` y el catálogo de puertos quedan
 desplazadas por esta Constitución hasta que un ADR las reemplace. Mientras ese ADR no
 exista, el criterio F4 (f) no se cumple para H003.
 
-**Version**: 3.1.0 | **Ratified**: 2026-11-23 | **Last Amended**: 2026-11-24
+**Version**: 3.2.0 | **Ratified**: 2026-11-23 | **Last Amended**: 2026-11-24

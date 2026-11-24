@@ -6,7 +6,9 @@
 - **Autoridad**: norma superior del proyecto. Todo ADR, módulo, prueba y documento
   operativo debe cumplirla. Toda excepción exige ADR aceptado que la enmiende.
 - **Decisiones que la sustentan**: `docs/adr/0003-arquitectura-hexagonal.md` (topología);
-  `docs/adr/0005-incidente-activo-distinto-de-resuelto.md` (definición de activo, Art. 1.10).
+  `docs/adr/0005-incidente-activo-distinto-de-resuelto.md` (definición de activo, Art. 1.10);
+  `docs/adr/004-persistencia-postgresql-y-runtime-contenedores.md` (persistencia dual y
+  runtime en contenedores, Art. 2.6 y 3.2).
 
 ---
 
@@ -17,7 +19,7 @@ los equipos, los estados y la clave de duplicados viven **solo** en `src/domain/
 Ningún caso de uso, adaptador, DTO, esquema, fixture o prueba puede reimplementar,
 aproximar ni sobrescribir esos valores.
 
-1.2 **Pureza.** `domain/` no importa `sqlite3`, `argparse`, `json`, HTTP, MCP,
+1.2 **Pureza.** `domain/` no importa `sqlite3`, `psycopg`, `argparse`, `json`, HTTP, MCP,
 frameworks, rutas del proyecto ni variables de entorno. Recibe `datetime` como
 parámetro, no llama a `datetime.now()`, no imprime y devuelve valores inmutables.
 
@@ -102,10 +104,11 @@ salida. Prohibido replicar triaje, SLA o duplicados y prohibido ramificar por ca
 dentro de `domain/` o `application/`. Un canal nuevo es un paquete nuevo más su registro
 en la raíz de composición: el núcleo no se reabre.
 
-2.6 **Adaptadores secundarios** — `src/adapters/outbound/`: SQLite de la librería
-estándar con marcadores `?`, índice parcial de ADR-001 (con el predicado que fija
-ADR-005) y streaming; un adaptador
-alterno para la base dedicada de H004. DDL y mapeo fila ↔ entidad viven solo aquí.
+2.6 **Adaptadores secundarios** — `src/adapters/outbound/`: persistencia dual
+(ADR-004): SQLite con `sqlite3` y PostgreSQL con `psycopg[binary]`, con consultas
+parametrizadas, instantes como texto ISO 8601 e intercalación `C`; índice parcial de
+ADR-001 (con el predicado que fija ADR-005) y streaming en ambos motores. DDL y mapeo
+fila ↔ entidad viven solo aquí.
 
 2.7 **Paridad de canales.** REST, CLI y el futuro MCP deben producir la misma
 clasificación para el mismo reporte. Se verifica con una suite de contrato compartida,
@@ -124,7 +127,9 @@ framework de CLI y herramienta de pruebas se registrará en un ADR propio cuando
 que la requiera se priorice. Hasta que ese ADR exista, rigen las restricciones de
 ADR-001/002: solo librería estándar salvo `tiktoken`, `sqlite3` con marcadores `?`, sin
 ORM, sin `pandas` y sin librerías de calendario. La decisión pendiente no autoriza a
-adelantar dependencias.
+adelantar dependencias. El número de ese ADR de stack está pendiente: ADR-004 quedó
+asignado a la persistencia dual. Excepción vigente: `psycopg[binary]` para el adaptador
+PostgreSQL (ADR-004), confinado a `src/adapters/outbound/` y `tests/`.
 
 3.3 **Independencia del núcleo.** Ningún artículo de este capítulo permite que `domain/`
 o `application/` importen un framework, un ORM o un cliente de canal. Cuando se elija el

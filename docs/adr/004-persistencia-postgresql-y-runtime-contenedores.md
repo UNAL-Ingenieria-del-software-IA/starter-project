@@ -1,11 +1,14 @@
 # ADR-004: Persistencia dual SQLite/PostgreSQL sin ORM en runtime multi-contenedor
-- **Estado**: Propuesto
+- **Estado**: Aceptado
 - **Fecha**: 2026-11-24
 - **Autor(es)**: Equipo de Ingeniería IncidentOps
-- **Reemplaza a**: ADR-001, parcialmente: solo la restricción de que `sqlite3` de la librería
-  estándar sea el único motor y el único acceso a datos admitidos. El índice parcial cubriente
-  (con el predicado de ADR-005), la lectura en streaming y la evaluación de SLA en Python siguen
-  vigentes.
+- **Reemplaza a**:
+  - ADR-001, parcialmente: solo la restricción de que `sqlite3` de la librería estándar sea el
+    único motor y el único acceso a datos admitidos. El índice parcial cubriente (con el
+    predicado de ADR-005), la lectura en streaming y la evaluación de SLA en Python siguen
+    vigentes.
+  - ADR-006, parcialmente: la exigencia de que el almacén responda al componer el servicio
+    HTTP.
 ---
 
 ## 1. Contexto y Problema
@@ -211,6 +214,10 @@ puerto tal como está.
     - `db`: `postgres:16-alpine`, con la versión mayor fijada y un volumen nombrado para
       los datos.
   - `api` solo se considera disponible cuando `db` responde.
+- **Arranque degradado del servicio HTTP.** Con una `DATABASE_URL` de esquema admitido, la
+  API arranca aunque la base no responda. La disponibilidad la informa la sonda
+  `GET /health`, no el arranque. La CLI conserva el fallo temprano salvo en `health`. Esto
+  evita que reiniciar solo `api` con la base detenida provoque un bucle de caídas.
   - El roadmap deja fuera la autenticación, así que la API no se publica más allá del host
     local. Esto mantiene la postura de seguridad «solo loopback» que tiene hoy.
 
@@ -283,6 +290,9 @@ adaptador de salida que elige la raíz de composición y el proceso que aloja la
   - **Credenciales en la configuración.** `DATABASE_URL` pasa a contener secretos. Hay que
     tratarla como tal en la definición del entorno, en los registros y en los mensajes de
     error.
+  - **«Proceso en marcha» deja de implicar «base disponible».** Con el arranque degradado,
+    que el proceso HTTP esté vivo ya no garantiza que el almacén responda. Los consumidores
+    deben mirar la sonda.
   - **Concurrencia del adaptador sin resolver aquí.** Esta decisión no adopta un pool de
     conexiones externo. Si el adaptador PostgreSQL necesita uno que implique otra
     dependencia, hace falta un ADR propio (Constitución T5).

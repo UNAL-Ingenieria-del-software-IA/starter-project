@@ -1,0 +1,60 @@
+openapi: 3.1.0
+info:
+  title: IncidentOps — sondas de salud (spec 004)
+  version: "004"
+  description: >
+    GET /health es la sonda de disponibilidad: consulta de verdad el almacén configurado en
+    cada petición (FR-001). GET /v1/health se conserva como sonda de liveness y no toca el
+    almacén (FR-005). Ningún cuerpo ni registro contiene DATABASE_URL ni sus partes
+    (RNF-003).
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Disponibilidad del servicio y de su almacén
+      responses:
+        "200":
+          description: El almacén respondió a una consulta real (FR-002).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+              example: { status: ok, database: connected }
+        "503":
+          description: >
+            El almacén no respondió en 3 s o menos, por rechazo, credenciales, tiempo
+            agotado o esquema sin inicializar (FR-003, FR-004, RNF-002). Este cuerpo es el
+            estado de la sonda: no usa el sobre común de errores (D5).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+              example: { status: error, database: unavailable }
+        "405":
+          description: Método distinto de GET; sobre común `method_not_allowed` (vigente).
+  /v1/health:
+    get:
+      operationId: liveness
+      summary: El proceso vive (no consulta el almacén)
+      responses:
+        "200":
+          description: Sin cambios respecto a la spec 001 (FR-005).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LivenessResponse" }
+              example: { status: ok }
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status, database]
+      properties:
+        status: { type: string, enum: [ok, error] }
+        database: { type: string, enum: [connected, unavailable] }
+      description: >
+        Solo dos combinaciones son válidas: ok/connected (200) y error/unavailable (503).
+    LivenessResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok] }
