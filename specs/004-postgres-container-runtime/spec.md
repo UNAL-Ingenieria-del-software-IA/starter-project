@@ -4,8 +4,9 @@
 
 **Creado**: 2026-11-24
 
-**Estado**: Borrador, bloqueada para implementación hasta que se cumplan las dependencias de
-gobernanza (D-G1 a D-G5).
+**Estado**: Implementada (2026-11-24). Las dependencias de gobernanza D-G1 a D-G5 quedaron
+cumplidas: ADR-004 aceptado (con el arranque degradado HTTP), Constitución 3.2.0,
+`docs/constitution.md` alineada y Ruff vetando `psycopg` fuera de `adapters/outbound`.
 
 **Entrada**: Descripción del usuario: "Especifica la Feature 004-postgres-container-runtime
 respaldada por ADR-004 y la Constitución actualizada, incluyendo requisitos funcionales y

@@ -81,6 +81,18 @@ uv run python -X utf8 -m src.adapters.inbound.cli sla INC-DEMO-01 --reference-ti
 
 El segundo comando devuelve 120 minutos hábiles transcurridos de 480 (el fin de semana no cuenta). Códigos de salida del CLI: `0` correcto, `1` entrada inválida, incidente inexistente o identificador repetido, `2` error de uso y `4` error interno. Detalle: [`specs/003-incident-lifecycle-sla/quickstart.md`](specs/003-incident-lifecycle-sla/quickstart.md).
 
+### Runtime en contenedores y sonda de salud (H004)
+`DATABASE_URL` elige el motor: sin definir (o `sqlite:///…`) se usa SQLite en proceso, como hasta ahora; con `postgresql://…` se usa PostgreSQL (ADR-004). La sonda `GET /health` y el subcomando `health` consultan de verdad el almacén configurado: `{"status": "ok", "database": "connected"}` (HTTP `200`, código `0`) o `{"status": "error", "database": "unavailable"}` (HTTP `503`, código `4`).
+
+```bash
+uv run python -X utf8 -m src.adapters.inbound.cli health --format json
+docker compose up -d --build --wait        # db (postgres:16-alpine) + api, sin pasos previos
+curl -s http://127.0.0.1:8080/health
+docker compose down                        # los datos quedan en el volumen pgdata; `down -v` los borra
+```
+
+La API solo se publica en el loopback del host y la base no se publica. Las pruebas contra PostgreSQL (`pytest -m postgres`) y contra contenedores (`pytest -m docker`) se omiten de forma visible si no hay base de pruebas o Docker. Detalle: [`specs/004-postgres-container-runtime/quickstart.md`](specs/004-postgres-container-runtime/quickstart.md).
+
 ### 3. Fase 3 — Auditoría del Motor de Triaje (`src/triage_rules.py`)
 Evalúa cómo el motor heurístico actual clasifica los 10 incidentes de [`data/sample_incidents.json`](data/sample_incidents.json) e identifica sus fallos de diseño:
 

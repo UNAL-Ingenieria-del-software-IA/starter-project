@@ -3,6 +3,7 @@
 - **Estado**: Aceptado
 - **Fecha**: 2026-11-16
 - **Autor(es)**: Equipo de Ingeniería IncidentOps
+- **Reemplazado parcialmente por**: ADR-004 (motor único `sqlite3`)
 - **Componentes Afectados**: [`src/incident_repository.py`, `src/sla_calculator.py`, `src/models.py`]
 
 ---

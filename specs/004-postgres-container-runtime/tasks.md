@@ -307,7 +307,7 @@ completo.
 
 **Propósito**: criterio de terminado F4 (f) y coherencia documental.
 
-- [ ] T040 [P] Actualizar AGENTS.md:
+- [X] T040 [P] Actualizar AGENTS.md:
   - dependencia `psycopg[binary]`;
   - `DATABASE_URL` con `postgresql://`, sembrado si está vacía;
   - `create_repository` en el mapa;
@@ -316,11 +316,11 @@ completo.
   - arranque degradado HTTP;
   - comandos de composición y marcadores `postgres`/`docker`;
   - la desviación de gobernanza del stack, con número pendiente en lugar de ADR-004.
-- [ ] T041 [P] Agregar a README.md una sección breve de H004 (runtime en contenedores y sonda) que remita a specs/004-postgres-container-runtime/quickstart.md
-- [ ] T042 [P] Corregir en specs/002-active-incident-summary/quickstart.md el ejemplo `DATABASE_URL="postgresql://x"`, que ya no es un esquema no soportado: usar `mysql://x`
-- [ ] T043 [P] Agregar en los metadatos de docs/adr/001-optimizacion-consulta-incidentes.md, y en ningún otro lugar, la línea «Reemplazado parcialmente por: ADR-004 (motor único `sqlite3`)», sin tocar su razonamiento (Art. 3.7, skill adr-writer)
-- [ ] T044 Actualizar la línea **Estado** de specs/004-postgres-container-runtime/spec.md a «Implementada (fecha)» y retirar el bloqueo de gobernanza
-- [ ] T045 Verificación completa F4:
+- [X] T041 [P] Agregar a README.md una sección breve de H004 (runtime en contenedores y sonda) que remita a specs/004-postgres-container-runtime/quickstart.md
+- [X] T042 [P] Corregir en specs/002-active-incident-summary/quickstart.md el ejemplo `DATABASE_URL="postgresql://x"`, que ya no es un esquema no soportado: usar `mysql://x`
+- [X] T043 [P] Agregar en los metadatos de docs/adr/001-optimizacion-consulta-incidentes.md, y en ningún otro lugar, la línea «Reemplazado parcialmente por: ADR-004 (motor único `sqlite3`)», sin tocar su razonamiento (Art. 3.7, skill adr-writer)
+- [X] T044 Actualizar la línea **Estado** de specs/004-postgres-container-runtime/spec.md a «Implementada (fecha)» y retirar el bloqueo de gobernanza
+- [X] T045 Verificación completa F4:
   - `uv run ruff check src/`;
   - `uv run python -X utf8 -m pytest -v`;
   - `uv run python -X utf8 -m src.sla_calculator`;

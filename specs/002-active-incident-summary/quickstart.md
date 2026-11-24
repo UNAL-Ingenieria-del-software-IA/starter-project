@@ -102,7 +102,7 @@ proceso.
 ```bash
 # bash
 DATABASE_URL="sqlite:///./tmp-h002.db" uv run python -X utf8 -m src.adapters.inbound.cli summary --format json
-DATABASE_URL="postgresql://x" uv run python -X utf8 -m src.adapters.inbound.cli summary
+DATABASE_URL="mysql://x" uv run python -X utf8 -m src.adapters.inbound.cli summary
 ```
 
 ```powershell
