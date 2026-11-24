@@ -11,12 +11,16 @@ Bloques:
 from __future__ import annotations
 
 import inspect
+import logging
 import typing
 from datetime import datetime, timedelta
-from typing import Callable, List
+from typing import Callable, List, Optional, Tuple
 
 import pytest
+from fastapi.testclient import TestClient
 
+from src.adapters.inbound.api.app import create_app
+from src.adapters.outbound.clock import FixedClock
 from src.adapters.outbound.null_repository import NullIncidentRepository
 from src.adapters.outbound.sqlite_repository import (
     SELECT_ACTIVE_BY_COMPONENT_SQL,
@@ -24,10 +28,24 @@ from src.adapters.outbound.sqlite_repository import (
     SQLiteIncidentRepository,
 )
 from src.application.ports import IncidentRepositoryPort
+from src.application.services import IncidentService
 from src.domain.models import ACTIVE_STATUSES, Incident
-from src.domain.sla_calculator import SLA_POLICY_TABLE
+from src.domain.sla_calculator import SLA_POLICY_TABLE, evaluate_sla_status
 from src.domain.working_time_calculator import BOGOTA_TZ
 from tests.doubles import InMemoryIncidentRepository
+
+SUMMARY_PATH = "/api/v1/incidents/summary"
+ITEM_FIELDS = {
+    "incident_id",
+    "title",
+    "component",
+    "severity",
+    "status",
+    "elapsed_minutes",
+    "is_breached",
+    "requires_escalation",
+}
+SUMMARY_FIELDS = {"reference_time", "component_filter", "total_active", "breached_count", "incidents"}
 
 # Martes 2026-11-24, 09:00 en Bogotá: instante de referencia común de los escenarios.
 REF = datetime(2026, 11, 24, 9, 0, tzinfo=BOGOTA_TZ)
@@ -250,3 +268,207 @@ def test_repositorio_nulo_no_tiene_efectos():
     assert list(repository.list_active_incidents()) == []
     assert list(repository.find_open_duplicates("payment-gateway", REF, REF)) == []
     assert repository.check_health() is True
+
+
+# ---------------------------------------------------------------------------
+# 2. Historia 1 — Ver el estado operativo en una sola consulta (US1)
+# ---------------------------------------------------------------------------
+
+
+def summary_service(
+    *incidents: Incident,
+    now: datetime = REF,
+    repository: Optional[IncidentRepositoryPort] = None,
+) -> Tuple[IncidentService, IncidentRepositoryPort]:
+    """Servicio con reloj fijo y un almacén sembrado con los incidentes del `Given`."""
+    store = repository if repository is not None else InMemoryIncidentRepository()
+    for incident in incidents:
+        store.save_incident(incident)
+    return IncidentService(FixedClock(now), store), store
+
+
+def test_e1_resumen_global_excluye_resueltos():
+    """
+    E1 — Resumen global excluyendo RESOLVED
+    Given tres incidentes activos de severidades y componentes distintos, uno de ellos
+          con su SLA ya incumplido, y un incidente resuelto
+    When  la persona de guardia consulta el resumen general en un instante fijo
+    Then  el total activo es 3 y el total incumplido es 1
+    And   el detalle muestra los tres activos con todos sus campos, sin el resuelto
+    And   los totales coinciden con el detalle
+    """
+    service, _ = summary_service(
+        make_incident("INC-A", severity="P0", component="payment-gateway", created_at=REF - timedelta(minutes=90)),
+        make_incident(
+            "INC-B", severity="P1", component="auth-identity", status="IN_PROGRESS", created_at=REF - timedelta(minutes=30)
+        ),
+        make_incident("INC-C", severity="P3", component="database-cluster", created_at=REF - timedelta(minutes=60)),
+        make_incident("INC-R", severity="P0", component="payment-gateway", status="RESOLVED"),
+    )
+
+    summary = service.get_active_incidents_summary()
+
+    assert summary.reference_time == REF
+    assert summary.component_filter is None
+    assert summary.total_active == 3
+    assert summary.breached_count == 1
+    assert {view.incident_id for view in summary.incidents} == {"INC-A", "INC-B", "INC-C"}
+    assert summary.total_active == len(summary.incidents)
+    assert summary.breached_count == sum(view.is_breached for view in summary.incidents)
+    assert [view.incident_id for view in summary.incidents if view.is_breached] == ["INC-A"]
+
+
+def test_e1_por_la_web_devuelve_el_contrato_completo():
+    """
+    E1 (canal HTTP)
+    Given activos y un resuelto en el almacén
+    When  se consulta por la web sin parámetros
+    Then  la respuesta es exitosa, con los campos del contrato y totales consistentes
+    """
+    service, _ = summary_service(
+        make_incident("INC-A", severity="P0", created_at=REF - timedelta(minutes=90)),
+        make_incident("INC-B", severity="P1", component="auth-identity", status="IN_PROGRESS"),
+        make_incident("INC-R", severity="P0", status="RESOLVED"),
+    )
+
+    response = TestClient(create_app(service)).get(SUMMARY_PATH)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == SUMMARY_FIELDS
+    assert body["reference_time"] == "2026-11-24T09:00:00-05:00"
+    assert body["component_filter"] is None
+    assert body["total_active"] == len(body["incidents"]) == 2
+    assert body["breached_count"] == sum(item["is_breached"] for item in body["incidents"]) == 1
+    assert all(set(item) == ITEM_FIELDS for item in body["incidents"])
+    assert "INC-R" not in {item["incident_id"] for item in body["incidents"]}
+
+
+def test_metodo_distinto_de_get_responde_405():
+    service, _ = summary_service()
+    response = TestClient(create_app(service)).post(SUMMARY_PATH)
+    assert response.status_code == 405
+    assert response.json()["error"]["code"] == "method_not_allowed"
+
+
+def test_e4_solo_resolved_queda_fuera():
+    """
+    E4 — Solo RESOLVED queda fuera del resumen
+    Given un almacén con incidentes OPEN, IN_PROGRESS, ESCALATION_REQUIRED y RESOLVED
+    When  se consulta el resumen sin filtro
+    Then  el detalle contiene OPEN, IN_PROGRESS y ESCALATION_REQUIRED
+    And   el RESOLVED no cuenta en ninguna cifra
+    """
+    service, _ = summary_service(
+        make_incident("INC-1", status="OPEN"),
+        make_incident("INC-2", status="IN_PROGRESS"),
+        make_incident("INC-3", status="ESCALATION_REQUIRED"),
+        make_incident("INC-4", status="RESOLVED", created_at=REF - timedelta(minutes=500)),
+    )
+
+    summary = service.get_active_incidents_summary()
+
+    assert {view.status for view in summary.incidents} == {"OPEN", "IN_PROGRESS", "ESCALATION_REQUIRED"}
+    assert summary.total_active == 3
+    assert summary.breached_count == 0
+
+
+def test_e7_minutos_segun_la_politica_de_la_severidad():
+    """
+    E7 — Los minutos transcurridos respetan la política de la severidad
+    Given un incidente P0 y un P2 activos, ambos creados el mismo sábado
+    When  se consulta el resumen en el mismo instante de referencia
+    Then  el P0 acumula tiempo calendario y el P2 solo minutos hábiles
+    And   ambos coinciden con la evaluación canónica de SLA
+    """
+    saturday = datetime(2026, 11, 21, 10, 0, tzinfo=BOGOTA_TZ)
+    p0 = make_incident("INC-P0", severity="P0", created_at=saturday)
+    p2 = make_incident("INC-P2", severity="P2", created_at=saturday)
+    service, _ = summary_service(p0, p2)
+
+    views = {view.incident_id: view for view in service.get_active_incidents_summary().incidents}
+
+    assert views["INC-P0"].elapsed_minutes == 71 * 60  # sábado 10:00 → martes 09:00, 24x7.
+    assert views["INC-P2"].elapsed_minutes == 600 + 60  # lunes completo + martes 08:00–09:00.
+    for incident in (p0, p2):
+        canonical = evaluate_sla_status(incident, REF)
+        view = views[incident.incident_id]
+        assert (view.elapsed_minutes, view.is_breached, view.requires_escalation) == (
+            canonical.elapsed_minutes,
+            canonical.is_breached,
+            canonical.requires_escalation,
+        )
+
+
+def test_e8_incumplimiento_y_escalamiento_son_excluyentes():
+    """
+    E8 — Incumplimiento y escalamiento son excluyentes
+    Given un activo que superó el umbral de escalamiento sin superar su límite
+          y otro que ya superó el límite
+    When  se consulta el resumen
+    Then  el primero requiere escalamiento y no está incumplido
+    And   el segundo está incumplido y no requiere escalamiento
+    """
+    service, _ = summary_service(
+        make_incident("INC-UMBRAL", severity="P1", created_at=REF - timedelta(minutes=200)),
+        make_incident("INC-LIMITE", severity="P1", created_at=REF - timedelta(minutes=241)),
+    )
+
+    views = {view.incident_id: view for view in service.get_active_incidents_summary().incidents}
+
+    assert (views["INC-UMBRAL"].requires_escalation, views["INC-UMBRAL"].is_breached) == (True, False)
+    assert (views["INC-LIMITE"].requires_escalation, views["INC-LIMITE"].is_breached) == (False, True)
+
+
+def test_e9_orden_determinista_del_detalle():
+    """
+    E9 — Orden determinista del detalle
+    Given activos de varias severidades y distintos tiempos transcurridos
+    When  se consulta el resumen
+    Then  va de la severidad más crítica a la menos crítica
+    And   a igual severidad, primero el mayor tiempo transcurrido
+    And   a igual severidad y tiempo, por identificador ascendente
+    """
+    service, _ = summary_service(
+        make_incident("INC-9", severity="P3", created_at=REF - timedelta(minutes=30)),
+        make_incident("INC-5", severity="P1", created_at=REF - timedelta(minutes=10)),
+        make_incident("INC-2", severity="P0", created_at=REF - timedelta(minutes=5)),
+        make_incident("INC-1", severity="P0", created_at=REF - timedelta(minutes=50)),
+        make_incident("INC-7", severity="P2", created_at=REF - timedelta(minutes=20)),
+        make_incident("INC-6", severity="P2", created_at=REF - timedelta(minutes=20)),
+    )
+
+    order = [view.incident_id for view in service.get_active_incidents_summary().incidents]
+
+    assert order == ["INC-1", "INC-2", "INC-5", "INC-6", "INC-7", "INC-9"]
+
+
+@pytest.mark.parametrize("store", sorted(REPOSITORY_FACTORIES))
+def test_e12_la_consulta_no_modifica_los_datos(store, caplog):
+    """
+    E12 — La consulta no modifica los datos (SC-005)
+    Given un almacén con incidentes activos y resueltos
+    When  se consulta el resumen mil veces y otra vez por la web
+    Then  ningún incidente se crea, modifica ni elimina
+    And   ninguna traza registra títulos
+    """
+    incidents = [
+        make_incident("INC-1", severity="P0", title="Título secreto de pagos"),
+        make_incident("INC-2", severity="P2", status="IN_PROGRESS", title="Otro título sensible"),
+        make_incident("INC-3", severity="P1", status="RESOLVED", title="Resuelto con título"),
+    ]
+    service, repository = summary_service(*incidents, repository=REPOSITORY_FACTORIES[store]())
+    before = [repository.get_incident(item.incident_id) for item in incidents]
+    active_before = _by_id(repository.list_active_incidents())
+
+    for _ in range(1000):
+        service.get_active_incidents_summary()
+    caplog.set_level(logging.INFO, logger="src.adapters.inbound.api.app")
+    response = TestClient(create_app(service)).get(SUMMARY_PATH)
+
+    assert response.status_code == 200
+    assert [repository.get_incident(item.incident_id) for item in incidents] == before
+    assert _by_id(repository.list_active_incidents()) == active_before
+    assert any("total_active=2" in record.getMessage() for record in caplog.records)
+    for incident in incidents:
+        assert incident.title not in caplog.text

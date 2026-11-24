@@ -1,7 +1,8 @@
-"""DTO del canal HTTP (spec 001 §5 y §6.3).
+"""DTO del canal HTTP (spec 001 §5 y §6.3; spec 002, contrato del resumen).
 
-Solo describen la forma del contrato: los valores válidos de severidad, equipo, acción y
-tipo de duplicado se toman de los `Literal` del dominio, nunca se redefinen aquí (Art. 1.1).
+Solo describen la forma del contrato: los valores válidos de severidad, estado, equipo,
+acción y tipo de duplicado se toman de los `Literal` del dominio, nunca se redefinen aquí
+(Art. 1.1).
 """
 
 from __future__ import annotations
@@ -9,9 +10,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
-from src.domain.models import DuplicateType, SeverityLevel, TeamName, TriageAction
+from src.domain.models import DuplicateType, IncidentStatus, SeverityLevel, TeamName, TriageAction
 
 
 class ReportIn(BaseModel):
@@ -48,6 +49,45 @@ class TriageResponse(BaseModel):
     """Respuesta de `POST /v1/triage`; conserva orden y longitud del lote."""
 
     results: List[TriageResultOut]
+
+
+class SummaryQueryParams(BaseModel):
+    """Parámetros de `GET /api/v1/incidents/summary`. Uno desconocido se rechaza con 400.
+
+    Ambos llegan como texto: el servicio normaliza el componente y `parse_reference_time`
+    analiza el instante, igual que en el CLI (paridad de aceptación y rechazo).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    component: Optional[StrictStr] = None
+    reference_time: Optional[StrictStr] = None
+
+
+class ActiveIncidentItem(BaseModel):
+    """Una fila del detalle del resumen (spec 002, FR-004)."""
+
+    incident_id: str
+    title: str
+    component: str
+    severity: SeverityLevel
+    status: IncidentStatus
+    elapsed_minutes: int
+    is_breached: bool
+    requires_escalation: bool
+
+
+class ActiveIncidentsSummaryResponse(BaseModel):
+    """Respuesta del resumen; idéntica al `--format json` del CLI (FR-014)."""
+
+    reference_time: str = Field(
+        json_schema_extra={"format": "date-time"},
+        description="Instante evaluado, ISO-8601 con desfase de Bogotá (-05:00).",
+    )
+    component_filter: Optional[str]
+    total_active: int
+    breached_count: int
+    incidents: List[ActiveIncidentItem]
 
 
 class ErrorBody(BaseModel):
