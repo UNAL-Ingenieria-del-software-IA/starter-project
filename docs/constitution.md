@@ -47,8 +47,10 @@ etapa son parte del contrato de dominio.
 dinámicamente (Ley 51/1983). Una fecha sin zona se interpreta como hora de Bogotá.
 
 1.8 **Escalamiento e incumplimiento.** `escalation_limit = int(max * 0.75)`.
-Requiere escalamiento si el incidente no está `RESOLVED`, no está incumplido y
-`elapsed >= escalation_limit`. Hay incumplimiento solo si `elapsed > max`; alcanzar
+Requiere escalamiento si el incidente no está resuelto en el instante evaluado (no está
+`RESOLVED`, o su `resolved_at` es posterior a ese instante), no está incumplido y
+`elapsed >= escalation_limit`. El tiempo transcurrido se mide hasta el instante evaluado
+o hasta la resolución, lo que ocurra primero. Hay incumplimiento solo si `elapsed > max`; alcanzar
 el límite exacto no incumple. Escalamiento e incumplimiento son excluyentes.
 `requires_escalation` es un valor **derivado** del SLA: no se persiste ni se recalcula
 en el adaptador. `ESCALATION_REQUIRED` es un estado del ciclo de vida, no un resultado
@@ -84,8 +86,11 @@ correlación. Sin dependencias externas ni de otras capas.
 de `domain`; no conoce HTTP, MCP ni SQL.
 
 2.4 **Puertos secundarios** — declarados con `typing.Protocol`, deliberadamente
-mínimos: `IncidentRepositoryPort` (activos por componente/estado, guardar, localizar
-equivalente abierto) y `ClockPort`. Un puerto no expone SQL ni tipos de tabla.
+mínimos: `IncidentRepositoryPort` (activos por componente/estado, obtener por
+identificador, guardar con reemplazo, insertar sin reemplazo, localizar abiertos con la
+misma clave de grupo), `ClockPort` e `IncidentIdGeneratorPort` (identificadores
+`INC-<HEX8>`, para que el núcleo no genere aleatoriedad, Art. 1.3). Un puerto no expone
+SQL ni tipos de tabla.
 `Protocol` no valida en ejecución: la frontera se vigila con revisión y con prueba
 automatizada de arquitectura.
 
@@ -150,3 +155,12 @@ actualización de `AGENTS.md` si cambian comandos o rutas.
 
 4.2 Ninguna capa puede invocar "urgencia operativa" para saltarse un artículo sin
 excepción documentada y con fecha de expiración.
+
+4.3 **Desviación abierta: enmienda sin ADR (2026-11-24).** Las enmiendas de los
+Art. 1.8 (escalamiento en el instante evaluado) y 2.4 (catálogo de puertos) se hicieron
+sin el ADR que exige el Art. 4.1, junto con la versión 3.0.0 de
+`.specify/memory/constitution.md`. La justificación está en
+`specs/003-incident-lifecycle-sla/research.md` §R2, §R4, §R5 y §R7. ADR-006 no se edita
+(Art. 3.7); sus filas sobre `find_open_duplicates` y el catálogo quedan desplazadas por
+esta Constitución hasta que un ADR las reemplace. Mientras tanto, el Art. 3.6 (e) no se
+cumple para H003.

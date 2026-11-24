@@ -237,7 +237,8 @@ consistente con la política canónica.
   > **When** se envía por HTTP o por CLI
   > **Then** se rechaza sin devolver resumen
   > **And** HTTP responde `422` con el código de error correspondiente
-  > **And** el CLI termina con código de salida `3` y escribe el diagnóstico por `stderr`
+  > **And** el CLI termina con código de salida `1` y escribe el diagnóstico por `stderr`
+  > *(antes `3`; enmienda de spec 003 D8)*
 
 - **E11b — Parámetro desconocido**
   > **Given** una consulta con un parámetro o una bandera que no forma parte del contrato
@@ -333,7 +334,8 @@ consistente con la política canónica.
 - **FR-013**: El canal CLI DEBE ofrecer el subcomando `summary` con `--component`,
   `--reference-time` y `--format table|json`. DEBE escribir solo el resultado en
   `stdout` y los diagnósticos en `stderr`, y usar los códigos de salida vigentes: `0`
-  éxito, `2` error de uso, `3` entrada inválida, `4` fallo interno.
+  éxito, `2` error de uso, `1` entrada inválida, `4` fallo interno. *Enmienda
+  2026-11-24 (spec 003 D8, Constitución 3.0.0): la entrada inválida pasa de `3` a `1`.*
 - **FR-014**: La salida JSON DEBE ser el contrato estable y coincidir valor a valor entre
   HTTP y CLI para el mismo almacén e instante. La tabla del CLI es presentación y no
   forma parte del contrato.
@@ -402,8 +404,8 @@ uv run python -X utf8 -m src.adapters.inbound.cli summary --reference-time 2026-
 | Situación | HTTP | CLI |
 |---|---|---|
 | Consulta válida, con o sin coincidencias | `200` | `0` |
-| Instante de referencia no parseable | `422 invalid_timestamp` | `3` |
-| Filtro vacío o solo espacios | `422 invalid_payload` | `3` |
+| Instante de referencia no parseable | `422 invalid_timestamp` | `1` |
+| Filtro vacío o solo espacios | `422 invalid_payload` | `1` |
 | Parámetro o bandera desconocida | `400 invalid_payload` | `2` |
 | Método no permitido | `405 method_not_allowed` | — |
 | Fallo inesperado | `500 internal_error` | `4` |

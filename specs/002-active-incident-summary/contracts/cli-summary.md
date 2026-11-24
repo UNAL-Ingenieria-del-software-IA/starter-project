@@ -9,8 +9,8 @@ uv run python -X utf8 -m src.adapters.inbound.cli summary
 
 | Opción | Equivalente HTTP | Regla |
 |---|---|---|
-| `--component` | `component` | Se normaliza (recorte + minúsculas) en el servicio. Vacío o solo espacios → `3`. |
-| `--reference-time` | `reference_time` | Mismo analizador que HTTP (`parse_reference_time`). No parseable → `3`. |
+| `--component` | `component` | Se normaliza (recorte + minúsculas) en el servicio. Vacío o solo espacios → `1`. |
+| `--reference-time` | `reference_time` | Mismo analizador que HTTP (`parse_reference_time`). No parseable → `1`. |
 | `--format` | — | `json` imprime exactamente el cuerpo de `200` de HTTP; `table` es presentación. |
 
 ## Salida
@@ -31,7 +31,7 @@ uv run python -X utf8 -m src.adapters.inbound.cli summary
 |---|---|---|
 | `0` | Éxito, con o sin coincidencias | — |
 | `2` | Bandera desconocida o `--format` inválido (Click/Typer) | Uso de Click |
-| `3` | `--reference-time` no parseable o `--component` vacío | `error [<code>] <campo>: <mensaje>` |
+| `1` | `--reference-time` no parseable o `--component` vacío (antes `3`; enmienda de spec 003 D8) | `error [<code>] <campo>: <mensaje>` |
 | `4` | Fallo inesperado | `error [internal_error]: <TipoDeExcepción>` |
 | `4` | Configuración inválida (`DATABASE_URL` no soportada); aplica también a `triage` | `error [internal_error]: <mensaje>` (nombra solo el esquema, nunca la URL) |
 
@@ -47,7 +47,7 @@ exit 0
 
 $ ... summary --reference-time ayer
 error [invalid_timestamp] reference_time: 'ayer' no es una fecha ISO-8601 válida.
-exit 3
+exit 1
 
 $ ... summary --componente payment-gateway
 Error: No such option: --componente

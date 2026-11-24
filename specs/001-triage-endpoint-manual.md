@@ -303,8 +303,10 @@ uv run python -X utf8 -m src.adapters.inbound.cli audit
 | `-v`, `--explain` | Añade `analysis` a la salida de tabla. |
 
 - **stdout**: solo el resultado. **stderr**: diagnósticos y mensajes de error.
-- **Códigos de salida**: `0` éxito · `2` error de uso (argparse) · `3` entrada inválida
+- **Códigos de salida**: `0` éxito · `2` error de uso (argparse) · `1` entrada inválida
   (equivalente a `400`/`413`/`415`/`422`) · `4` fallo interno (equivalente a `500`).
+  *Enmienda 2026-11-24 (spec 003 D8, Constitución 3.0.0): la entrada inválida pasa de
+  `3` a `1` en todo el CLI.*
 - `audit` reproduce exactamente la auditoría actual sobre `data/sample_incidents.json`;
   `-m src.triage_rules` delega en él (D9), por lo que su salida y su orden no cambian.
 
@@ -399,8 +401,8 @@ cubren con **un** `curl` de humo documentado en el Anexo, no automatizado.
 
 > **Given** una invocación `triage --incident-id "" --raw-text "..."`.
 > **When** se ejecuta
-> **Then** termina con código `3`, escribe el diagnóstico por `stderr` y no imprime
-> resultado por `stdout`
+> **Then** termina con código `1`, escribe el diagnóstico por `stderr` y no imprime
+> resultado por `stdout` *(antes `3`; enmienda de spec 003 D8)*
 
 **E4 — Paridad del canal CLI**
 

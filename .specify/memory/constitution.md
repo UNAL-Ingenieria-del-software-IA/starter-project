@@ -43,8 +43,10 @@ sin enmienda de esta Constitución.
 dinámicamente (Ley 51/1983). Una fecha sin zona se interpreta como hora de Bogotá.
 
 **1.8 Escalamiento e incumplimiento.** `escalation_limit = int(max * 0.75)`.
-Se requiere escalamiento si el incidente no está `RESOLVED`, no está incumplido y
-`elapsed >= escalation_limit`. Hay incumplimiento solo si `elapsed > max`; alcanzar el
+Se requiere escalamiento si el incidente no está resuelto en el instante evaluado (no
+está `RESOLVED`, o su `resolved_at` es posterior a ese instante), no está incumplido y
+`elapsed >= escalation_limit`. El tiempo transcurrido se mide hasta el instante evaluado
+o hasta la resolución, lo que ocurra primero. Hay incumplimiento solo si `elapsed > max`; alcanzar el
 límite exacto no incumple. Escalamiento e incumplimiento son excluyentes.
 `requires_escalation` es un valor **derivado** del SLA: no se persiste ni se recalcula
 en el adaptador. `ESCALATION_REQUIRED` es un estado del ciclo de vida, no un resultado
@@ -123,7 +125,11 @@ base del núcleo: solo satisfacen la forma del puerto.
 
 **3.2 Catálogo mínimo.** `ClockPort` suministra el instante de referencia cuando el
 canal no lo aporta. `IncidentRepositoryPort` localiza activos por componente y estado,
-guarda un incidente y localiza un equivalente abierto para duplicados. Añadir un método
+obtiene un incidente por identificador, guarda un incidente (con reemplazo para la
+siembra; sin reemplazo para la creación, que rechaza un identificador existente) y
+localiza los abiertos con la misma clave de grupo de duplicados.
+`IncidentIdGeneratorPort` suministra identificadores `INC-<HEX8>`, para que el núcleo
+no genere aleatoriedad (Principio 1.3). Añadir un método
 a un puerto obliga a todos los adaptadores y exige justificación en el ADR o
 especificación correspondiente.
 
@@ -265,13 +271,23 @@ uv run python -X utf8 -m src.triage_rules
 uv run uvicorn src.main:app --host 127.0.0.1 --port 8080
 ```
 
-**F3 Contrato de canales.** REST expone `POST /v1/triage`, `GET /v1/health` y
-`GET /api/v1/incidents/summary` (parámetros `component` y `reference_time`); el CLI
-ejecuta `triage` con `--raw-text`, `--incident-id`, `--created-at`, `--now` y
-`--format table|json`, y `summary` con `--component`, `--reference-time` y
-`--format table|json`. El JSON del resumen es el mismo cuerpo por ambos canales
-(ADR-006). Códigos de salida del CLI: `0` correcto, `2` error de uso, `3` entrada
-inválida, `4` error interno. Resultados a stdout, diagnósticos a stderr.
+**F3 Contrato de canales.** REST expone `POST /v1/triage`, `GET /v1/health`,
+`GET /api/v1/incidents/summary` (parámetros `component` y `reference_time`),
+`POST /api/v1/incidents` y `GET /api/v1/incidents/{incident_id}/sla` (parámetro
+`reference_time`). El CLI ejecuta:
+
+- `triage` con `--raw-text`, `--incident-id`, `--created-at`, `--now` y
+  `--format table|json`;
+- `summary` con `--component`, `--reference-time` y `--format table|json`;
+- `create` con `--title`, `--raw-text`, `--incident-id`, `--created-at`, `--status`,
+  `--resolved-at` y `--format table|json`;
+- `sla <incident_id>` con `--reference-time` y `--format table|json`.
+
+El JSON del resumen, de la creación y de la auditoría de SLA es el mismo cuerpo por
+ambos canales (ADR-006, spec 003). Códigos de salida del CLI: `0` correcto, `1` entrada
+inválida (incluidos incidente inexistente e identificador en conflicto), `2` error de
+uso, `4` error interno. El código `3` queda retirado. Resultados a stdout, diagnósticos
+a stderr.
 
 **F4 Criterio de terminado.** Un cambio está terminado solo si: (a) `uv run ruff check
 src/` pasa; (b) `uv run pytest -v` pasa; (c) los oráculos de dominio del Principio V.5
@@ -312,4 +328,19 @@ Pydantic v2, Typer, pytest, Ruff) y enmendar las rutas de ADR-003 §3 (`rest/` y
 a las rutas canónicas de esta Constitución (`api/` y `cli.py`). Mientras ADR-004 no
 exista, rige el texto de esta Constitución.
 
-**Version**: 2.1.0 | **Ratified**: 2026-11-23 | **Last Amended**: 2026-11-24
+**Desviación abierta: enmienda 3.0.0 sin ADR.** La versión 3.0.0 se adoptó sin el ADR
+que exige el punto (2) de la Enmienda, por decisión del 2026-11-24. Cambió:
+
+- F3: rutas `POST /api/v1/incidents` y `GET /api/v1/incidents/{incident_id}/sla`,
+  subcomandos `create` y `sla`, y códigos de salida `0/1/2/4`;
+- Principio 3.2: `IncidentIdGeneratorPort`, inserción sin reemplazo y búsqueda de
+  abiertos por clave de grupo en `IncidentRepositoryPort`;
+- Principio 1.8: el escalamiento se evalúa según el estado en el instante evaluado.
+
+La justificación de cada cambio está en
+`specs/003-incident-lifecycle-sla/research.md` §R2, §R4, §R5, §R7 y §R11. ADR-006 no se
+edita; sus filas sobre `find_open_duplicates` y el catálogo de puertos quedan
+desplazadas por esta Constitución hasta que un ADR las reemplace. Mientras ese ADR no
+exista, el criterio F4 (f) no se cumple para H003.
+
+**Version**: 3.0.0 | **Ratified**: 2026-11-23 | **Last Amended**: 2026-11-24

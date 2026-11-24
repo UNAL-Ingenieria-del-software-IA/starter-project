@@ -154,8 +154,8 @@ Los `Literal` de severidad y estado se importan del dominio; no se redefinen (Ar
 |---|---|---|
 | Parámetro o bandera desconocidos | Pydantic `extra="forbid"` / Click | `400 invalid_payload` / `2` |
 | `--format` inválido | Typer (enum) | — / `2` |
-| `reference_time` no parseable | `parse_reference_time` | `422 invalid_timestamp` / `3` |
-| `component` vacío o solo espacios | Servicio | `422 invalid_payload` / `3` |
+| `reference_time` no parseable | `parse_reference_time` | `422 invalid_timestamp` / `1` (antes `3`; spec 003 D8) |
+| `component` vacío o solo espacios | Servicio | `422 invalid_payload` / `1` (antes `3`; spec 003 D8) |
 | Componente sin coincidencias | Servicio | `200` vacío / `0` (FR-007) |
 | Instante anterior a la creación | Servicio (exclusión) | `200` sin ese incidente (FR-009) |
 | Severidad sin política | FK + `INNER JOIN` en SQLite | La fila no puede entrar ni leerse |

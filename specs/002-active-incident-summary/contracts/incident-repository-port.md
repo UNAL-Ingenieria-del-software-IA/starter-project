@@ -8,6 +8,12 @@
 Justificación de cada método frente al catálogo mínimo del Art. III.2: ADR-006 y
 [research.md §R7](../research.md#r7).
 
+> **Enmienda 2026-11-24 (spec 003).** La firma de `find_open_duplicates` y el método nuevo
+> `add_incident` los rige
+> [specs/003-incident-lifecycle-sla/contracts/incident-repository-port.md](../../003-incident-lifecycle-sla/contracts/incident-repository-port.md).
+> La firma de ventana de abajo queda solo como registro histórico de H002. La conformidad
+> de `tests/test_spec_002_summary.py` sigue la firma nueva.
+
 ## Firma
 
 ```python
