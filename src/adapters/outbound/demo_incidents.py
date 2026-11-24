@@ -52,20 +52,29 @@ DEMO_INCIDENTS: Tuple[Incident, ...] = (
 )
 
 
-def seed_demo_incidents(repository: IncidentRepositoryPort) -> None:
-    """Guarda el conjunto fijo de demostración por el puerto.
+def classified_demo_incidents() -> Tuple[Incident, ...]:
+    """El conjunto de demostración con equipo y clave de grupo derivados por el dominio.
 
     La clave de grupo y el equipo de cada demo los deriva el dominio aplicando el triaje a
     su título (spec 003 research §R9): así `INC-2001` queda con `payment-availability` sin
     escribir claves a mano. Severidad, componente, estado e instantes son los de las
-    constantes, que son el contrato de demostración de spec 002.
+    constantes, que son el contrato de demostración de spec 002. Es la semilla de ambos
+    motores: SQLite en memoria y PostgreSQL vacío (spec 004 FR-011).
     """
+    classified = []
     for incident in DEMO_INCIDENTS:
         triage = classify_incident(IncidentReport(incident.incident_id, incident.title, incident.created_at))
-        repository.save_incident(
+        classified.append(
             replace(
                 incident,
                 recommended_team=triage.recommended_team,
                 duplicate_group_key=triage.duplicate_group_key,
             )
         )
+    return tuple(classified)
+
+
+def seed_demo_incidents(repository: IncidentRepositoryPort) -> None:
+    """Guarda el conjunto de demostración clasificado por el puerto (almacén en memoria)."""
+    for incident in classified_demo_incidents():
+        repository.save_incident(incident)

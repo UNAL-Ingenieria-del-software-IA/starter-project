@@ -146,7 +146,7 @@ contra `db-test` (FR-020) y se omiten de forma visible sin `INCIDENTOPS_TEST_POS
 
 ### Pruebas de la historia 2 (escribir primero; deben fallar)
 
-- [ ] T022 [P] [US2] Agregar a tests/test_spec_004_runtime_health.py el bloque «US2 — selección de motor (rápidas)»:
+- [X] T022 [P] [US2] Agregar a tests/test_spec_004_runtime_health.py el bloque «US2 — selección de motor (rápidas)»:
   - `test_bdd_e7_sin_database_url_usa_memoria`: `monkeypatch.delenv` y también `DATABASE_URL=""` → `summary --reference-time 2026-11-24T09:00:00 --format json` con `INC-2001`…`INC-2008`, y `health` `connected`;
   - `test_bdd_e8_sqlite_archivo`: `create` y `sla` en dos invocaciones con `sqlite:///<tmp_path>`; el archivo no tiene datos de demostración;
   - `test_bdd_e10_esquema_no_soportado`: `mysql://u:secreto@h/db`, `postgres://u:secreto@h/db` y `texto` → CLI código `4`, el mensaje nombra solo el esquema, sin `secreto`;
@@ -155,14 +155,14 @@ contra `db-test` (FR-020) y se omiten de forma visible sin `INCIDENTOPS_TEST_POS
   - `test_bdd_e17_arranque_degradado_rapido`: `create_app(build_service(require_health=False))` con la URL del puerto muerto → `/health` `503` y `/api/v1/incidents/summary` `500 internal_error`, sin la URL en el cuerpo;
   - `test_url_postgres_mal_formada`: una URL que `conninfo_to_dict` rechaza → `ValueError` que no contiene la URL;
   - `test_c11_error_del_driver_no_cruza_el_puerto`: `PostgresIncidentRepository` sobre `postgresql://u:secreto@127.0.0.1:1/db` → `list_active_incidents()` lanza `StoreUnavailableError` (no `psycopg.Error`, sin `__cause__`) en ≤ 3 s, y el mensaje no contiene `secreto` ni la URL (contracts/incident-repository-port.md C11).
-- [ ] T023 [P] [US2] Agregar a tests/test_spec_004_runtime_health.py el bloque «US2 — PostgreSQL» con `@pytest.mark.postgres`:
+- [X] T023 [P] [US2] Agregar a tests/test_spec_004_runtime_health.py el bloque «US2 — PostgreSQL» con `@pytest.mark.postgres`:
   - fixture `pg_url`: lee `INCIDENTOPS_TEST_POSTGRES_URL` o hace `pytest.skip` con motivo visible; ejecuta `DROP TABLE IF EXISTS incidents, sla_policies` antes de cada prueba (data-model.md §4 `INCIDENTOPS_TEST_POSTGRES_URL`);
   - fixture `repositorio` parametrizado sobre SQLite (`tmp_path`) y PostgreSQL;
   - conformidad C1–C10 de contracts/incident-repository-port.md, incluida C7 con `INC-ABC1`/`INC-abc1` (orden por bytes) y C5 con microsegundos;
   - `test_bdd_e9_postgresql_persiste_entre_procesos`: `POST /api/v1/incidents` con un servicio y `sla` con otro servicio nuevo sobre la misma URL; la base tiene exactamente 8 incidentes de demostración más el creado;
   - `test_bdd_e11_paridad_byte_a_byte`: el mismo conjunto en ambos motores → `summary_to_contract`, `sla_audit_to_contract` y `creation_to_contract` (con duplicado) serializados con `json.dumps(..., ensure_ascii=False)` son idénticos;
   - `test_c10_siembra_unica`: dos adaptadores inicializados en secuencia sobre la misma base vacía → 8 incidentes; una base con un incidente previo → no siembra.
-- [ ] T024 [P] [US2] Crear docker-compose.yml con el servicio `db-test` (FR-020, contracts/container-runtime.md):
+- [X] T024 [P] [US2] Crear docker-compose.yml con el servicio `db-test` (FR-020, contracts/container-runtime.md):
   - `profiles: ["test"]`;
   - `postgres:16-alpine` y `POSTGRES_INITDB_ARGS="--locale=C --encoding=UTF8"`;
   - `tmpfs` en `/var/lib/postgresql/data`;
@@ -173,13 +173,13 @@ contra `db-test` (FR-020) y se omiten de forma visible sin `INCIDENTOPS_TEST_POS
 
 ### Implementación de la historia 2
 
-- [ ] T025 [US2] Extraer el mapeo compartido a src/adapters/outbound/row_mapping.py, para que el formato de instantes y el orden de parámetros tengan una sola fuente en ambos motores (FR-012, RNF-001):
+- [X] T025 [US2] Extraer el mapeo compartido a src/adapters/outbound/row_mapping.py, para que el formato de instantes y el orden de parámetros tengan una sola fuente en ambos motores (FR-012, RNF-001):
   - `instant_to_text(value)`: `to_bogota(...).isoformat(timespec="microseconds")`;
   - `incident_params(incident)`: los nueve valores en el orden del DDL;
   - `text_to_instant(value)`.
 
   Usarlo en src/adapters/outbound/sqlite_repository.py sin cambiar su comportamiento: la conformidad de las specs 002 y 003 debe seguir en verde.
-- [ ] T026 [US2] Crear src/adapters/outbound/postgres_repository.py con las sentencias constantes (marcadores `%s`, sin concatenar SQL) según data-model.md §1:
+- [X] T026 [US2] Crear src/adapters/outbound/postgres_repository.py con las sentencias constantes (marcadores `%s`, sin concatenar SQL) según data-model.md §1:
   - DDL de `sla_policies`: data-model.md `sla_policies.severity`, `sla_policies.max_resolution_minutes` y `sla_policies.operates_24x7`;
   - DDL de `incidents`: data-model.md `incidents.incident_id` (restricción `incidents_pkey`), `incidents.title`, `incidents.component`, `incidents.severity` (FK a `sla_policies`), `incidents.status`, `incidents.created_at`, `incidents.resolved_at`, `incidents.recommended_team` e `incidents.duplicate_group_key`, todos `TEXT COLLATE "C"` salvo los enteros;
   - los dos índices parciales de data-model.md §1 «Índices»;
@@ -191,19 +191,19 @@ contra `db-test` (FR-020) y se omiten de forma visible sin `INCIDENTOPS_TEST_POS
   - el candado consultivo con clave entera constante.
 
   Docstring del módulo en español con las referencias a ADR-004 y a la Constitución 2.6 y T3.
-- [ ] T027 [US2] Implementar en src/adapters/outbound/postgres_repository.py la clase `PostgresIncidentRepository(database_url, *, seed_if_empty=())`, con la conexión de research.md §R1:
+- [X] T027 [US2] Implementar en src/adapters/outbound/postgres_repository.py la clase `PostgresIncidentRepository(database_url, *, seed_if_empty=())`, con la conexión de research.md §R1:
   - el constructor no abre red;
   - conexión principal perezosa con `autocommit=True`, `row_factory=dict_row`, `connect_timeout=2`, `tcp_user_timeout=2000` y `options="-c statement_timeout=2000"`, protegida por un `threading.Lock`;
   - se descarta ante `OperationalError`, `InterfaceError` o conexión rota, y se lanza `StoreUnavailableError` `from None` (research.md §R6);
   - `close()` y `vacuum_analyze()` quedan fuera del puerto.
-- [ ] T028 [US2] Implementar la inicialización única por proceso en src/adapters/outbound/postgres_repository.py (research.md §R4–R5, data-model.md §1 «Inicialización»), en una sola transacción:
+- [X] T028 [US2] Implementar la inicialización única por proceso en src/adapters/outbound/postgres_repository.py (research.md §R4–R5, data-model.md §1 «Inicialización»), en una sola transacción:
   - `pg_advisory_xact_lock`;
   - DDL;
   - *upsert* de `sla_policies` desde `SLA_POLICY_TABLE`;
   - `SELECT EXISTS (SELECT 1 FROM incidents)`;
   - si no hay incidentes, siembra `seed_if_empty` con `_SEED_INCIDENT_SQL`;
   - por último, `self._initialized = True`.
-- [ ] T029 [US2] Implementar los métodos del puerto en src/adapters/outbound/postgres_repository.py (data-model.md §2, research.md §R6):
+- [X] T029 [US2] Implementar los métodos del puerto en src/adapters/outbound/postgres_repository.py (data-model.md §2, research.md §R6):
   - `save_incident` y `add_incident` validan la severidad con `get_sla_rule_for_severity` antes de ir a la base;
   - `UniqueViolation` sobre `incidents_pkey` → `IncidentIdConflictError`;
   - otra violación de integridad → `ValueError` sin el mensaje del driver;
@@ -211,18 +211,18 @@ contra `db-test` (FR-020) y se omiten de forma visible sin `INCIDENTOPS_TEST_POS
   - `list_active_incidents` recorre `cursor.stream()` dentro del candado, sin `fetchall()` (Constitución 2.6, ADR-001, research.md §R1), y mapea cada fila activa sin `resolved_at`, como en SQLite;
   - todas llaman antes a la inicialización si falta;
   - ninguna excepción de `psycopg` sale de los métodos del puerto (Constitución 3.3, contracts/incident-repository-port.md C11).
-- [ ] T030 [US2] Implementar `check_health()` en src/adapters/outbound/postgres_repository.py según research.md §R2:
+- [X] T030 [US2] Implementar `check_health()` en src/adapters/outbound/postgres_repository.py según research.md §R2:
   - abre una conexión efímera con los mismos límites y ejecuta `SELECT 1`;
   - si falta, ejecuta la inicialización;
   - devuelve `True` solo si ambas tienen éxito;
   - cualquier `psycopg.Error` u `OSError` → `False`; nunca lanza.
-- [ ] T031 [US2] Agregar la rama `postgresql://` a `create_repository` en src/adapters/outbound/factory.py (research.md §R7, data-model.md §4 `DATABASE_URL`):
+- [X] T031 [US2] Agregar la rama `postgresql://` a `create_repository` en src/adapters/outbound/factory.py (research.md §R7, data-model.md §4 `DATABASE_URL`):
   - importación perezosa de `postgres_repository`;
   - validación sin red con `psycopg.conninfo.conninfo_to_dict`; si falla, `ValueError("DATABASE_URL de PostgreSQL mal formada (esquema 'postgresql').")` `from None`;
   - `PostgresIncidentRepository(url, seed_if_empty=DEMO_INCIDENTS)`;
   - `postgres://` se sigue rechazando.
-- [ ] T032 [US2] Agregar `--database-url` a src/incident_repository.py (research.md §R13). Si se indica, compone con `create_repository`, y sobre PostgreSQL llama a `vacuum_analyze()` antes de medir. Si no, sigue con SQLite como hoy. Sin SQL en el arnés.
-- [ ] T033 [US2] Verificar:
+- [X] T032 [US2] Agregar `--database-url` a src/incident_repository.py (research.md §R13). Si se indica, compone con `create_repository`, y sobre PostgreSQL llama a `vacuum_analyze()` antes de medir. Si no, sigue con SQLite como hoy. Sin SQL en el arnés.
+- [X] T033 [US2] Verificar:
   - pruebas rápidas: `uv run ruff check src/` y `uv run python -X utf8 -m pytest -v` (los casos `postgres` aparecen SKIPPED con motivo);
   - pruebas contra PostgreSQL: `docker compose --profile test up -d --wait db-test` y `INCIDENTOPS_TEST_POSTGRES_URL=…` → `uv run python -X utf8 -m pytest -v -m postgres` en verde;
   - SC-005: `uv run python -X utf8 -m src.incident_repository --database-url … --records 20000 --iterations 20` con promedio < 1 s;

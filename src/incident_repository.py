@@ -1,17 +1,24 @@
 """Arnés de benchmark del resumen de incidentes activos (spec 002 SC-001, research §R15).
 
 Compone lo mismo que la raíz de composición, sin canales: `SQLiteIncidentRepository`
-(en memoria) + `IncidentService` + `FixedClock`. Siembra incidentes sintéticos con
+(en memoria) + `IncidentService` + `FixedClock`. Con `--database-url` compone el
+repositorio con `create_repository` (spec 004 research §R13); sobre PostgreSQL ejecuta
+`vacuum_analyze()` antes de medir, para que el planificador tenga estadísticas y el índice
+parcial cubriente permita lecturas sin tocar la tabla (ADR-004). Siembra incidentes sintéticos con
 componentes canónicos vía `save_incident` y mide `get_active_incidents_summary` con y sin
 filtro de componente, informando promedio y p95.
 
 La consulta ya filtra los activos en SQL (`status <> 'RESOLVED'`, ADR-005) con un índice
 parcial cubriente y un único `INNER JOIN sla_policies` (ADR-001): no hay escaneo completo
 ni consultas N+1. Este módulo no contiene SQL propio; la persistencia vive en
-`src/adapters/outbound/sqlite_repository.py`.
+`src/adapters/outbound/sqlite_repository.py` y `postgres_repository.py`.
 
 Uso:
     uv run python -X utf8 -m src.incident_repository --records 20000 --iterations 20
+    uv run python -X utf8 -m src.incident_repository --database-url <postgresql://…> --records 20000 --iterations 20
+
+La URL nunca se imprime: solo su esquema (Constitución 3.5). La base PostgreSQL debe ser
+desechable (por ejemplo `db-test`): el arnés escribe incidentes sintéticos en ella.
 """
 
 import argparse
@@ -21,7 +28,9 @@ from datetime import datetime, timedelta
 from typing import Callable, List, Optional, Tuple
 
 from src.adapters.outbound.clock import FixedClock
+from src.adapters.outbound.factory import create_repository
 from src.adapters.outbound.sqlite_repository import SQLiteIncidentRepository
+from src.application.ports import IncidentRepositoryPort
 from src.application.services import ActiveIncidentsSummary, IncidentService
 from src.domain.models import Incident, IncidentStatus, SeverityLevel
 from src.domain.working_time_calculator import BOGOTA_TZ
@@ -41,7 +50,7 @@ FILTERED_COMPONENT = "payment-gateway"
 SC001_LIMIT_MS = 1000.0
 
 
-def seed_synthetic_incidents(repository: SQLiteIncidentRepository, total_records: int) -> None:
+def seed_synthetic_incidents(repository: IncidentRepositoryPort, total_records: int) -> None:
     """Siembra incidentes deterministas por el puerto (mismas validaciones que producción)."""
     for index in range(1, total_records + 1):
         status = STATUSES[(index * 3 + index // 5) % len(STATUSES)]
@@ -82,14 +91,27 @@ def _run_benchmark() -> int:
     parser = argparse.ArgumentParser(description="Benchmark del resumen de incidentes activos (SC-001)")
     parser.add_argument("--records", type=int, default=20_000, help="Cantidad de incidentes a sembrar")
     parser.add_argument("--iterations", type=int, default=20, help="Consultas medidas por escenario")
+    parser.add_argument(
+        "--database-url",
+        default=None,
+        help="Almacén a medir (por defecto, SQLite en memoria); se usa create_repository.",
+    )
     args = parser.parse_args()
     if args.records < 1 or args.iterations < 1:
         parser.error("--records y --iterations deben ser enteros positivos.")
 
-    repository = SQLiteIncidentRepository(":memory:")
+    if args.database_url:
+        repository: IncidentRepositoryPort = create_repository(args.database_url)
+        engine = args.database_url.partition("://")[0]
+    else:
+        repository = SQLiteIncidentRepository(":memory:")
+        engine = "sqlite (memoria)"
     service = IncidentService(FixedClock(REFERENCE_TIME), repository)
-    print(f"Sembrando {args.records} incidentes sintéticos en SQLite en memoria (vía save_incident)...")
+    print(f"Sembrando {args.records} incidentes sintéticos en {engine} (vía save_incident)...")
     seed_synthetic_incidents(repository, args.records)
+    vacuum_analyze = getattr(repository, "vacuum_analyze", None)
+    if callable(vacuum_analyze):
+        vacuum_analyze()
 
     scenarios = (
         ("sin filtro", lambda: service.get_active_incidents_summary()),

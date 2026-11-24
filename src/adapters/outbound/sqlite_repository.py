@@ -13,20 +13,20 @@
   `:memory:` cada conexión es una base distinta y FastAPI atiende en un pool de hilos.
 - Los archivos creados por H002 se migran al abrir: se añaden las columnas que falten
   (`ALTER TABLE … ADD COLUMN`), sin tocar las filas existentes.
-- El DDL y el mapeo fila ↔ entidad viven solo aquí.
+- El DDL vive solo aquí; el formato de instantes y el orden de columnas se comparten con
+  el adaptador PostgreSQL desde `row_mapping.py` (spec 004 FR-012).
 """
 
 from __future__ import annotations
 
 import sqlite3
 import threading
-from datetime import datetime
 from typing import List, Optional, Sequence
 
+from src.adapters.outbound.row_mapping import active_incident, full_incident, incident_params
 from src.application.ports import IncidentIdConflictError
 from src.domain.models import Incident
 from src.domain.sla_calculator import SLA_POLICY_TABLE, get_sla_rule_for_severity
-from src.domain.working_time_calculator import to_bogota
 
 _SCHEMA_SQL = (
     """
@@ -138,53 +138,16 @@ SELECT_OPEN_DUPLICATES_SQL = """
 """
 
 
-def _to_text(value: datetime) -> str:
-    """Instante en Bogotá con ancho fijo: la comparación de texto equivale a la temporal."""
-    return to_bogota(value).isoformat(timespec="microseconds")
-
-
 def _params(incident: Incident) -> tuple:
-    return (
-        incident.incident_id,
-        incident.title,
-        incident.component,
-        incident.severity,
-        incident.status,
-        _to_text(incident.created_at),
-        _to_text(incident.resolved_at) if incident.resolved_at is not None else None,
-        incident.recommended_team,
-        incident.duplicate_group_key,
-    )
+    return incident_params(incident)
 
 
 def _active_row_to_incident(row: Sequence) -> Incident:
-    # Un incidente activo no tiene `resolved_at` (spec 002, consistencia del almacén); la
-    # consulta cubriente no lo proyecta, ni tampoco los campos de H003 que el resumen no usa.
-    incident_id, title, component, severity, status, created_at = row
-    return Incident(
-        incident_id=incident_id,
-        title=title,
-        component=component,
-        severity=severity,
-        status=status,
-        created_at=datetime.fromisoformat(created_at),
-        resolved_at=None,
-    )
+    return active_incident(*row)
 
 
 def _full_row_to_incident(row: Sequence) -> Incident:
-    incident_id, title, component, severity, status, created_at, resolved_at, team, group_key = row
-    return Incident(
-        incident_id=incident_id,
-        title=title,
-        component=component,
-        severity=severity,
-        status=status,
-        created_at=datetime.fromisoformat(created_at),
-        resolved_at=datetime.fromisoformat(resolved_at) if resolved_at is not None else None,
-        recommended_team=team,
-        duplicate_group_key=group_key,
-    )
+    return full_incident(*row)
 
 
 class SQLiteIncidentRepository:

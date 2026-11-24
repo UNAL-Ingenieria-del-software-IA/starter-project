@@ -1,0 +1,31 @@
+# Runtime de IncidentOps en contenedores (ADR-004, spec 004).
+#
+#   docker compose up -d --build --wait              # db + api
+#   docker compose --profile test up -d --wait db-test   # base desechable para pytest -m postgres
+#
+# Las credenciales tienen valores por defecto de desarrollo y se pueden sustituir por el
+# entorno (POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB). No hay secretos versionados ni
+# archivos que crear (FR-018).
+name: incidentops
+
+services:
+  # Base desechable para las pruebas `postgres` (FR-020): solo con el perfil `test`, datos
+  # en memoria (tmpfs) y publicada únicamente en loopback.
+  db-test:
+    image: postgres:16-alpine
+    profiles: ["test"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-incidentops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-incidentops}
+      POSTGRES_DB: ${POSTGRES_DB:-incidentops}
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    tmpfs:
+      - /var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${TEST_DB_HOST_PORT:-55432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
