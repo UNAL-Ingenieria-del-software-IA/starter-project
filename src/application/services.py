@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence
 
-from src.application.ports import ClockPort
+from src.application.ports import ClockPort, IncidentRepositoryPort
 from src.domain.models import IncidentReport, TriageResult
 from src.domain.triage_rules import classify_incident_batch
 from src.domain.working_time_calculator import to_bogota
@@ -37,10 +37,14 @@ class ReportInput:
 
 
 class IncidentService:
-    """Orquesta el triaje de un lote sin efectos secundarios."""
+    """Casos de uso compartidos por todos los canales.
 
-    def __init__(self, clock: ClockPort) -> None:
+    El triaje (H001) no usa el repositorio; el resumen de activos (H002) solo lo lee.
+    """
+
+    def __init__(self, clock: ClockPort, repository: IncidentRepositoryPort) -> None:
         self._clock = clock
+        self._repository = repository
 
     def triage_incident(self, reports: Sequence[ReportInput]) -> List[TriageResult]:
         """Valida y clasifica un lote de 1..N reportes, correlacionándolos entre sí.

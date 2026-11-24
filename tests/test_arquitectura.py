@@ -62,6 +62,21 @@ def test_capa_interna_sin_dependencias_prohibidas(layer):
     assert not violations, "\n".join(sorted(violations))
 
 
+def test_canales_de_entrada_no_conocen_persistencia():
+    """
+    Given los módulos de src/adapters/inbound/
+    When  se inspeccionan sus importaciones
+    Then  no importan sqlite3 ni adaptadores de salida: solo la raíz de composición
+          conoce implementaciones concretas (Art. 2.8; complemento AST de Ruff, IV.5)
+    """
+    violations = []
+    for path in sorted((SRC / "adapters" / "inbound").rglob("*.py")):
+        for lineno, module in _imports(path):
+            if module.split(".")[0] == "sqlite3" or module.startswith("src.adapters.outbound"):
+                violations.append(f"{path.relative_to(SRC.parent)}:{lineno} importa {module}")
+    assert not violations, "\n".join(violations)
+
+
 def test_dominio_no_lee_el_reloj():
     """
     Given los módulos de src/domain/

@@ -2,10 +2,16 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, Optional, Tuple
+from typing import FrozenSet, Literal, Optional, Tuple
 
 SeverityLevel = Literal["P0", "P1", "P2", "P3"]
 IncidentStatus = Literal["OPEN", "IN_PROGRESS", "ESCALATION_REQUIRED", "RESOLVED"]
+
+# Constitución Art. 1.10 (enmendado por ADR-005): activo es todo estado distinto de RESOLVED.
+ACTIVE_STATUSES: FrozenSet[IncidentStatus] = frozenset({"OPEN", "IN_PROGRESS", "ESCALATION_REQUIRED"})
+
+# Orden de criticidad, de más a menos crítica (spec 002 FR-011).
+SEVERITY_ORDER: Tuple[SeverityLevel, ...] = ("P0", "P1", "P2", "P3")
 
 TeamName = Literal["Backend-Core", "Platform-SRE", "Data-DBA", "Security-IAM"]
 

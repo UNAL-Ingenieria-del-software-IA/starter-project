@@ -18,6 +18,7 @@ from typer.testing import CliRunner
 
 from src.adapters.inbound.api.app import create_app
 from src.adapters.inbound.cli import create_cli
+from src.adapters.outbound.null_repository import NullIncidentRepository
 from src.application.services import IncidentService
 from src.main import build_service
 
@@ -35,7 +36,8 @@ def fixed_now() -> datetime:
 
 @pytest.fixture
 def service() -> IncidentService:
-    return build_service(FIXED_NOW)
+    # El triaje no tiene efectos: repositorio nulo (Constitución Art. III.4).
+    return build_service(FIXED_NOW, repository=NullIncidentRepository())
 
 
 @pytest.fixture
@@ -46,7 +48,7 @@ def client(service: IncidentService) -> TestClient:
 @pytest.fixture
 def cli_app() -> typer.Typer:
     def factory(now: Optional[datetime]) -> IncidentService:
-        return build_service(now or FIXED_NOW)
+        return build_service(now or FIXED_NOW, repository=NullIncidentRepository())
 
     return create_cli(factory)
 
