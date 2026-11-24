@@ -11,7 +11,9 @@ Bloques:
 from __future__ import annotations
 
 import inspect
+import json
 import logging
+import time
 import typing
 from datetime import datetime, timedelta
 from typing import Callable, List, Optional, Tuple
@@ -19,7 +21,10 @@ from typing import Callable, List, Optional, Tuple
 import pytest
 from fastapi.testclient import TestClient
 
+from typer.testing import CliRunner
+
 from src.adapters.inbound.api.app import create_app
+from src.adapters.inbound.cli import create_cli
 from src.adapters.outbound.clock import FixedClock
 from src.adapters.outbound.null_repository import NullIncidentRepository
 from src.adapters.outbound.sqlite_repository import (
@@ -28,11 +33,11 @@ from src.adapters.outbound.sqlite_repository import (
     SQLiteIncidentRepository,
 )
 from src.application.ports import IncidentRepositoryPort
-from src.application.services import IncidentService
+from src.application.services import IncidentService, ValidationError, parse_reference_time
 from src.domain.models import ACTIVE_STATUSES, Incident
 from src.domain.sla_calculator import SLA_POLICY_TABLE, evaluate_sla_status
 from src.domain.working_time_calculator import BOGOTA_TZ
-from tests.doubles import InMemoryIncidentRepository
+from tests.doubles import FailingIncidentRepository, InMemoryIncidentRepository
 
 SUMMARY_PATH = "/api/v1/incidents/summary"
 ITEM_FIELDS = {
@@ -593,3 +598,256 @@ def test_filtro_vacio_se_rechaza_con_422(component):
         "message": "El filtro de componente no puede estar vacío ni contener solo espacios.",
         "field": "component",
     }
+
+
+# ---------------------------------------------------------------------------
+# 4. Historia 3 — Confiar en una vista reproducible entre canales (US3)
+# ---------------------------------------------------------------------------
+
+
+def channels(service: IncidentService):
+    """Cliente HTTP, aplicación CLI y ejecutor sobre el mismo servicio (paridad en proceso)."""
+    return TestClient(create_app(service)), create_cli(lambda now: service), CliRunner()
+
+
+def test_e5_instante_anterior_a_la_creacion_excluye_el_incidente():
+    """
+    E5 — Un instante de referencia anterior a la creación excluye el incidente
+    Given un incidente activo creado después del instante consultado
+    When  se consulta el resumen en ese instante
+    Then  el incidente no aparece en el detalle ni en las cifras
+    And   la consulta responde con éxito
+    """
+    service, _ = summary_service(
+        make_incident("INC-ANTES", severity="P1", created_at=REF - timedelta(minutes=30)),
+        make_incident("INC-DESPUES", severity="P0", created_at=REF + timedelta(minutes=30)),
+    )
+
+    summary = service.get_active_incidents_summary(reference_time=REF)
+    response = TestClient(create_app(service)).get(SUMMARY_PATH, params={"reference_time": "2026-11-24T09:00:00"})
+
+    assert [view.incident_id for view in summary.incidents] == ["INC-ANTES"]
+    assert response.status_code == 200
+    assert [item["incident_id"] for item in response.json()["incidents"]] == ["INC-ANTES"]
+
+
+def test_incidente_creado_en_el_instante_exacto_cuenta_con_cero_minutos():
+    service, _ = summary_service(make_incident("INC-0", severity="P0", created_at=REF))
+    (view,) = service.get_active_incidents_summary(reference_time=REF).incidents
+    assert (view.incident_id, view.elapsed_minutes, view.is_breached) == ("INC-0", 0, False)
+
+
+def test_e6_el_estado_sla_se_recalcula_al_instante_consultado():
+    """
+    E6 — El estado SLA se recalcula al instante consultado
+    Given un incidente P0 activo que a las 09:00 aún no incumplía
+    When  se consulta el resumen a las 10:30
+    Then  aparece como incumplido
+    And   sus minutos corresponden al intervalo entre su creación y las 10:30
+    """
+    service, _ = summary_service(make_incident("INC-P0", severity="P0", created_at=REF - timedelta(minutes=60)))
+    client = TestClient(create_app(service))
+
+    at_nine = client.get(SUMMARY_PATH, params={"reference_time": "2026-11-24T09:00:00"}).json()
+    at_ten_thirty = client.get(SUMMARY_PATH, params={"reference_time": "2026-11-24T10:30:00-05:00"}).json()
+
+    assert (at_nine["incidents"][0]["elapsed_minutes"], at_nine["incidents"][0]["is_breached"]) == (60, False)
+    assert at_ten_thirty["reference_time"] == "2026-11-24T10:30:00-05:00"
+    assert (at_ten_thirty["incidents"][0]["elapsed_minutes"], at_ten_thirty["incidents"][0]["is_breached"]) == (150, True)
+
+
+def test_instante_futuro_se_admite():
+    service, _ = summary_service(make_incident("INC-1", severity="P0", created_at=REF))
+    summary = service.get_active_incidents_summary(reference_time=REF + timedelta(days=1))
+    assert summary.incidents[0].elapsed_minutes == 24 * 60
+    assert summary.breached_count == 1
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("2026-11-24T09:00:00", datetime(2026, 11, 24, 9, 0)),
+        ("2026-11-24T14:00:00Z", datetime(2026, 11, 24, 14, 0, tzinfo=BOGOTA_TZ) + timedelta(hours=-5)),
+        ("2026-11-24T14:00:00+00:00", REF),
+        ("2026-11-24T09:00:00-05:00", REF),
+    ],
+    ids=["naive", "sufijo-Z", "utc", "bogota"],
+)
+def test_parse_reference_time_acepta_iso_8601(text, expected):
+    parsed = parse_reference_time(text)
+    assert parsed == expected
+    if expected.tzinfo is None:
+        # Sin zona = hora de Bogotá: el servicio lo declara con -05:00.
+        service, _ = summary_service()
+        assert service.get_active_incidents_summary(reference_time=parsed).reference_time == REF
+
+
+def test_parse_reference_time_rechaza_texto_no_iso():
+    with pytest.raises(ValidationError) as error:
+        parse_reference_time("ayer")
+    assert (error.value.code, error.value.field) == ("invalid_timestamp", "reference_time")
+
+
+@pytest.mark.parametrize("component", [None, "payment-gateway"], ids=["global", "filtrado"])
+def test_e10_consulta_equivalente_por_terminal(component):
+    """
+    E10 — Consulta equivalente por terminal (CLI)
+    Given el mismo conjunto de incidentes activos y resueltos y el mismo instante
+    When  el operador consulta por la web y por la terminal en formato estructurado
+    Then  ambas consultas obtienen una respuesta exitosa
+    And   muestran el mismo instante, el mismo filtro, los mismos totales y los mismos
+          incidentes, valor a valor y en el mismo orden
+    """
+    incidents = two_component_store() + (
+        make_incident("INC-TXT", severity="P2", title="Caída de pagos 💳 — ñandú \"crítico\"\tcon tabulador"),
+    )
+    service, _ = summary_service(*incidents)
+    client, cli_app, runner = channels(service)
+    params = {"reference_time": "2026-11-24T10:30:00"}
+    args = ["summary", "--reference-time", "2026-11-24T10:30:00", "--format", "json"]
+    if component is not None:
+        params["component"] = component
+        args += ["--component", component]
+
+    http = client.get(SUMMARY_PATH, params=params)
+    cli = runner.invoke(cli_app, args)
+
+    assert http.status_code == 200
+    assert cli.exit_code == 0, cli.stderr
+    assert cli.stderr == ""
+    assert json.loads(cli.stdout) == http.json()
+    assert http.json()["reference_time"] == "2026-11-24T10:30:00-05:00"
+
+
+def test_cli_tabla_muestra_totales_y_detalle():
+    service, _ = summary_service(*two_component_store())
+    _, cli_app, runner = channels(service)
+
+    result = runner.invoke(cli_app, ["summary", "--component", "payment-gateway"])
+
+    assert result.exit_code == 0, result.stderr
+    assert "total_active=2" in result.stdout and "breached_count=1" in result.stdout
+    assert "INC-P1" in result.stdout and "INC-A1" not in result.stdout
+
+
+def test_e11a_invalidez_semantica_del_instante_y_del_filtro():
+    """
+    E11a — Invalidez semántica del instante y del filtro
+    Given una consulta con un instante no parseable o con un filtro vacío
+    When  se envía por HTTP o por CLI
+    Then  se rechaza sin devolver resumen
+    And   HTTP responde 422 con el código de error correspondiente
+    And   el CLI termina con código 3 y escribe el diagnóstico por stderr
+    """
+    service, _ = summary_service(*two_component_store())
+    client, cli_app, runner = channels(service)
+
+    http_time = client.get(SUMMARY_PATH, params={"reference_time": "ayer"})
+    cli_time = runner.invoke(cli_app, ["summary", "--reference-time", "ayer"])
+    cli_component = runner.invoke(cli_app, ["summary", "--component", "   "])
+
+    assert http_time.status_code == 422
+    assert http_time.json()["error"]["code"] == "invalid_timestamp"
+    assert http_time.json()["error"]["field"] == "reference_time"
+    for result, code in ((cli_time, "invalid_timestamp"), (cli_component, "invalid_payload")):
+        assert result.exit_code == 3
+        assert f"error [{code}]" in result.stderr
+        assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "args", [["summary", "--componente", "payment-gateway"], ["summary", "--format", "xml"]], ids=["bandera", "formato"]
+)
+def test_e11b_parametro_desconocido(args):
+    """
+    E11b — Parámetro desconocido
+    Given una consulta con un parámetro o una bandera fuera del contrato
+    When  se envía por HTTP o por CLI
+    Then  se rechaza sin devolver resumen
+    And   HTTP responde 400 y el CLI termina con código 2
+    """
+    service, _ = summary_service(*two_component_store())
+    client, cli_app, runner = channels(service)
+
+    http = client.get(SUMMARY_PATH, params={"componente": "payment-gateway"})
+    cli = runner.invoke(cli_app, args)
+
+    assert http.status_code == 400
+    assert http.json()["error"]["code"] == "invalid_payload"
+    assert http.json()["error"]["field"] == "componente"
+    assert cli.exit_code == 2
+    assert cli.stdout == ""
+
+
+def test_fallo_interno_responde_500_y_codigo_4_sin_titulos(caplog):
+    """
+    FR-012 / FR-013 — Fallo inesperado del almacén
+    Given un almacén que falla al leer activos
+    When  se consulta por HTTP y por CLI
+    Then  HTTP responde 500 internal_error y el CLI termina con código 4
+    And   ninguna traza ni diagnóstico contiene títulos
+    """
+    repository = FailingIncidentRepository()
+    service, _ = summary_service(make_incident("INC-1", title="Título que no debe filtrarse"), repository=repository)
+    caplog.set_level(logging.INFO)
+
+    http = TestClient(create_app(service), raise_server_exceptions=False).get(SUMMARY_PATH)
+    cli = CliRunner().invoke(create_cli(lambda now: service), ["summary"])
+
+    assert http.status_code == 500
+    assert http.json()["error"]["code"] == "internal_error"
+    assert cli.exit_code == 4
+    assert cli.stderr.strip() == "error [internal_error]: RuntimeError"
+    assert "Título que no debe filtrarse" not in caplog.text + cli.stderr + cli.stdout
+
+
+@pytest.mark.parametrize("command", [["summary"], ["triage", "--raw-text", "La pasarela de pagos está caída"]])
+def test_configuracion_invalida_termina_con_codigo_4_sin_traceback(command):
+    """
+    Given una DATABASE_URL no soportada (la fábrica del servicio falla)
+    When  se invoca cualquier subcomando del CLI
+    Then  termina con código 4 y un diagnóstico en español, sin traceback
+    """
+
+    def failing_factory(now):
+        raise ValueError("DATABASE_URL no soportada (esquema 'postgresql'): use sqlite:///:memory: o sqlite:///<ruta>.")
+
+    result = CliRunner().invoke(create_cli(failing_factory), command)
+
+    assert result.exit_code == 4
+    assert result.stderr.startswith("error [internal_error]: DATABASE_URL no soportada (esquema 'postgresql')")
+    assert "Traceback" not in result.stderr
+    assert result.stdout == ""
+
+
+def test_sc001_diez_mil_activos_por_canal_en_menos_de_un_segundo():
+    """
+    SC-001 — Con 10 000 activos, una consulta por canal tarda menos de 1 s
+    (medida en proceso, sin el arranque del intérprete)
+    """
+    repository = SQLiteIncidentRepository(":memory:")
+    severities, components = ("P0", "P1", "P2", "P3"), ("payment-gateway", "auth-identity", "database-cluster")
+    for index in range(10_000):
+        repository.save_incident(
+            make_incident(
+                f"INC-{index:05d}",
+                severity=severities[index % 4],
+                component=components[index % 3],
+                status="OPEN" if index % 2 else "IN_PROGRESS",
+                created_at=REF - timedelta(minutes=2 * index + 1),
+            )
+        )
+    service = IncidentService(FixedClock(REF), repository)
+    client, cli_app, runner = channels(service)
+
+    started = time.perf_counter()
+    http = client.get(SUMMARY_PATH)
+    http_seconds = time.perf_counter() - started
+    started = time.perf_counter()
+    cli = runner.invoke(cli_app, ["summary", "--format", "json"])
+    cli_seconds = time.perf_counter() - started
+
+    assert http.status_code == 200 and http.json()["total_active"] == 10_000
+    assert cli.exit_code == 0 and json.loads(cli.stdout)["total_active"] == 10_000
+    assert http_seconds < 1.0, f"HTTP tardó {http_seconds:.3f} s"
+    assert cli_seconds < 1.0, f"CLI tardó {cli_seconds:.3f} s"
