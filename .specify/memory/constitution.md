@@ -265,10 +265,13 @@ uv run python -X utf8 -m src.triage_rules
 uv run uvicorn src.main:app --host 127.0.0.1 --port 8080
 ```
 
-**F3 Contrato de canales.** REST expone `POST /v1/triage` y `GET /v1/health`; el CLI
+**F3 Contrato de canales.** REST expone `POST /v1/triage`, `GET /v1/health` y
+`GET /api/v1/incidents/summary` (parámetros `component` y `reference_time`); el CLI
 ejecuta `triage` con `--raw-text`, `--incident-id`, `--created-at`, `--now` y
-`--format table|json`. Códigos de salida del CLI: `0` correcto, `2` error de uso,
-`3` entrada inválida, `4` error interno. Resultados a stdout, diagnósticos a stderr.
+`--format table|json`, y `summary` con `--component`, `--reference-time` y
+`--format table|json`. El JSON del resumen es el mismo cuerpo por ambos canales
+(ADR-006). Códigos de salida del CLI: `0` correcto, `2` error de uso, `3` entrada
+inválida, `4` error interno. Resultados a stdout, diagnósticos a stderr.
 
 **F4 Criterio de terminado.** Un cambio está terminado solo si: (a) `uv run ruff check
 src/` pasa; (b) `uv run pytest -v` pasa; (c) los oráculos de dominio del Principio V.5
@@ -309,4 +312,4 @@ Pydantic v2, Typer, pytest, Ruff) y enmendar las rutas de ADR-003 §3 (`rest/` y
 a las rutas canónicas de esta Constitución (`api/` y `cli.py`). Mientras ADR-004 no
 exista, rige el texto de esta Constitución.
 
-**Version**: 2.0.0 | **Ratified**: 2026-11-23 | **Last Amended**: 2026-11-24
+**Version**: 2.1.0 | **Ratified**: 2026-11-23 | **Last Amended**: 2026-11-24

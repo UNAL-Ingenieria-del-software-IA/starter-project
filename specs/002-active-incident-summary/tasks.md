@@ -158,12 +158,12 @@ por HTTP y por CLI; un instante distinto cambia las banderas según la política
 
 **Propósito**: documentación, arnés de rendimiento y verificación final.
 
-- [ ] T039 [P] Reducir src/incident_repository.py a arnés de benchmark según research.md §R15: eliminar `IncidentRepository` y su SQL, componer `SQLiteIncidentRepository` + `IncidentService` + `FixedClock`, sembrar sintéticos con componentes canónicos vía `save_incident`, medir promedio y p95 con y sin filtro, y corregir la docstring y el banner obsoletos («Antes de Refactorizar», N+1)
-- [ ] T040 [P] Enmendar F3 en .specify/memory/constitution.md para agregar `GET /api/v1/incidents/summary` y el subcomando `summary` (`--component`, `--reference-time`, `--format table|json`), subir **Version** a 2.1.0 (MINOR: guía ampliada) con ADR-006 como sustento, preparar, revisar y retirar el informe de impacto, y comprobar `uv run ruff check src/` y pytest en verde (Gobernanza, puntos 1–5)
-- [ ] T041 Actualizar AGENTS.md: comandos (`uv run ruff check src/`, subcomando `summary`, `GET /api/v1/incidents/summary`, `DATABASE_URL`), mapa de arquitectura (`IncidentRepositoryPort`, módulos de `src/adapters/outbound/`, `ruff.toml` por capa), retirar «Not migrated» de `incident_repository.py`, actualizar la lista de pendientes de spec 001 y agregar el gotcha de jerarquía de Ruff (`extend`; `--config` la desactiva)
-- [ ] T042 [P] Agregar a README.md los comandos de consulta del resumen por HTTP y CLI
-- [ ] T043 Ejecutar la validación completa de quickstart.md §1–§7 en el orden de la Constitución (Ruff, pytest, `_run_demo`, auditoría con salida idéntica, HTTP, CLI, `DATABASE_URL`, benchmark SC-001 con p95 < 1 000 ms) y corregir cualquier desviación
-- [ ] T044 Revisar el criterio de terminado F4 (a–f) de .specify/memory/constitution.md y el Art. 3.6 de docs/constitution.md contra el cambio completo antes del commit final
+- [X] T039 [P] Reducir src/incident_repository.py a arnés de benchmark según research.md §R15: eliminar `IncidentRepository` y su SQL, componer `SQLiteIncidentRepository` + `IncidentService` + `FixedClock`, sembrar sintéticos con componentes canónicos vía `save_incident`, medir promedio y p95 con y sin filtro, y corregir la docstring y el banner obsoletos («Antes de Refactorizar», N+1)
+- [X] T040 [P] Enmendar F3 en .specify/memory/constitution.md para agregar `GET /api/v1/incidents/summary` y el subcomando `summary` (`--component`, `--reference-time`, `--format table|json`), subir **Version** a 2.1.0 (MINOR: guía ampliada) con ADR-006 como sustento, preparar, revisar y retirar el informe de impacto, y comprobar `uv run ruff check src/` y pytest en verde (Gobernanza, puntos 1–5)
+- [X] T041 Actualizar AGENTS.md: comandos (`uv run ruff check src/`, subcomando `summary`, `GET /api/v1/incidents/summary`, `DATABASE_URL`), mapa de arquitectura (`IncidentRepositoryPort`, módulos de `src/adapters/outbound/`, `ruff.toml` por capa), retirar «Not migrated» de `incident_repository.py`, actualizar la lista de pendientes de spec 001 y agregar el gotcha de jerarquía de Ruff (`extend`; `--config` la desactiva)
+- [X] T042 [P] Agregar a README.md los comandos de consulta del resumen por HTTP y CLI
+- [X] T043 Ejecutar la validación completa de quickstart.md §1–§7 en el orden de la Constitución (Ruff, pytest, `_run_demo`, auditoría con salida idéntica, HTTP, CLI, `DATABASE_URL`, benchmark SC-001 con p95 < 1 000 ms) y corregir cualquier desviación
+- [X] T044 Revisar el criterio de terminado F4 (a–f) de .specify/memory/constitution.md y el Art. 3.6 de docs/constitution.md contra el cambio completo antes del commit final
 
 ---
 

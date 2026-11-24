@@ -4,8 +4,9 @@
 
 **Creado**: 2026-11-24
 
-**Estado**: En implementación. FR-002 desbloqueado: el Art. 1.10 quedó enmendado (activo =
-todo estado distinto de `RESOLVED`) por ADR-005 y la Constitución 2.0.0.
+**Estado**: Implementada (US1–US3). FR-002 desbloqueado: el Art. 1.10 quedó enmendado
+(activo = todo estado distinto de `RESOLVED`) por ADR-005 y la Constitución 2.0.0; el
+contrato de canales (F3) se amplió en la Constitución 2.1.0 con sustento en ADR-006.
 
 **Entrada**: Descripción del usuario: "Necesitamos consultar el resumen de incidentes
 actualmente activos (OPEN e IN_PROGRESS) tanto por API HTTP como por CLI, indicando el

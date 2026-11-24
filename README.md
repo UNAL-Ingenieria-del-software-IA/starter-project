@@ -40,12 +40,26 @@ Para comparar el impacto en tokens de distintos formatos de serialización de da
 uv run python -m src.context_audit --compare-formats
 ```
 
-### 2. Fase 2 — Benchmark del Repositorio de Incidentes (10,000 registros)
-Ejecuta el escenario con deuda técnica (escaneo completo en memoria y problema de consultas N+1 sobre 10,000 incidentes en SQLite):
+### 2. Fase 2 — Benchmark del resumen de incidentes activos
+La deuda original (escaneo completo y consultas N+1) ya se corrigió (ADR-001, ADR-005, ADR-006). El arnés siembra incidentes sintéticos en SQLite en memoria y mide el resumen con y sin filtro de componente (promedio y p95; objetivo SC-001: < 1 000 ms con ≥ 10 000 activos):
 
 ```bash
-uv run python -m src.incident_repository
+uv run python -X utf8 -m src.incident_repository --records 20000 --iterations 20
 ```
+
+### Consulta del resumen de incidentes activos (H002)
+El mismo resumen por HTTP y por CLI. Sin `DATABASE_URL`, el almacén es `sqlite:///:memory:` con incidentes de demostración (`INC-2001`…`INC-2008`):
+
+```bash
+uv run uvicorn src.main:app --host 127.0.0.1 --port 8080
+curl -s "http://127.0.0.1:8080/api/v1/incidents/summary?reference_time=2026-11-24T09:00:00"
+curl -s "http://127.0.0.1:8080/api/v1/incidents/summary?component=payment-gateway"
+
+uv run python -X utf8 -m src.adapters.inbound.cli summary --reference-time 2026-11-24T09:00:00
+uv run python -X utf8 -m src.adapters.inbound.cli summary --component payment-gateway --format json
+```
+
+Con `DATABASE_URL="sqlite:///./incidentes.db"` se usa un archivo (sin datos de demostración). `--format json` imprime exactamente el cuerpo de la respuesta HTTP.
 
 ### 3. Fase 3 — Auditoría del Motor de Triaje (`src/triage_rules.py`)
 Evalúa cómo el motor heurístico actual clasifica los 10 incidentes de [`data/sample_incidents.json`](data/sample_incidents.json) e identifica sus fallos de diseño:
