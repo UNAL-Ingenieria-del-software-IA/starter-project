@@ -1,9 +1,15 @@
-"""Adaptador HTTP del triaje (spec 001 §6), del resumen de activos (spec 002) y de la
-creación y auditoría de SLA de incidentes (spec 003) sobre FastAPI.
+"""Adaptador HTTP del triaje (spec 001 §6), del resumen de activos (spec 002), de la
+creación y auditoría de SLA de incidentes (spec 003) y de la sonda de disponibilidad
+(spec 004) sobre FastAPI.
 
 Solo traduce: petición → llamada a `IncidentService` y resultado → `to_contract`,
-`summary_to_contract`, `creation_to_contract` o `sla_audit_to_contract`. No contiene
-reglas de triaje, SLA ni duplicados (Constitución Art. 2.4).
+`summary_to_contract`, `creation_to_contract`, `sla_audit_to_contract` o
+`health_to_contract`. No contiene reglas de triaje, SLA ni duplicados (Constitución
+Art. 2.4).
+
+Sondas (spec 004): `GET /v1/health` es liveness y no toca el almacén; `GET /health`
+consulta el almacén en cada petición y responde `200`/`503` con su propio cuerpo, fuera
+del sobre común. Sus registros solo anotan los cambios de estado (RNF-006).
 
 Reparto de errores (spec 001 D11, spec 002 FR-012, spec 003 FR-016–FR-018):
 - `400`: la petición no es interpretable (JSON roto, tipo incorrecto, campo o parámetro
@@ -18,6 +24,7 @@ Reparto de errores (spec 001 D11, spec 002 FR-012, spec 003 FR-016–FR-018):
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Annotated, Any, Mapping, Optional, Sequence, Tuple
 
@@ -33,6 +40,7 @@ from src.adapters.inbound.api.schemas import (
     ErrorEnvelope,
     HealthResponse,
     IncidentCreatedResponse,
+    LivenessResponse,
     SLAEvaluationResponse,
     SLAQueryParams,
     SummaryQueryParams,
@@ -46,6 +54,7 @@ from src.application.services import (
     IncidentService,
     ReportInput,
     creation_to_contract,
+    health_to_contract,
     parse_instant,
     parse_reference_time,
     sla_audit_to_contract,
@@ -113,6 +122,28 @@ def _classify_request_error(
     return 400, "invalid_payload", "El cuerpo no cumple el contrato de la petición.", _format_loc(loc)
 
 
+class _HealthLog:
+    """Registro de la sonda por instancia de `create_app` (spec 004 RNF-006, data-model §3).
+
+    Parte de «desconocido». Registra `INFO` en cada transición a `connected` y `WARNING` en
+    cada consulta `unavailable`; una consulta `connected` repetida no se registra. Cada
+    línea lleva solo el resultado, la duración y el código: nunca la URL ni la causa.
+    """
+
+    def __init__(self) -> None:
+        self._last: Optional[bool] = None
+        self._lock = threading.Lock()
+
+    def record(self, available: bool, duration_ms: float, status_code: int) -> None:
+        with self._lock:
+            previous, self._last = self._last, available
+        if available and previous is True:
+            return
+        level = logging.INFO if available else logging.WARNING
+        database = "connected" if available else "unavailable"
+        logger.log(level, "Sonda de salud: database=%s duracion_ms=%.1f codigo=%d", database, duration_ms, status_code)
+
+
 def create_app(service: IncidentService) -> FastAPI:
     """Construye la aplicación HTTP con el caso de uso inyectado por la raíz de composición."""
     app = FastAPI(
@@ -159,9 +190,24 @@ def create_app(service: IncidentService) -> FastAPI:
         logger.error("Fallo interno en %s %s: %s", request.method, request.url.path, type(exc).__name__)
         return _error_response(500, "internal_error", "Error interno al procesar la petición.")
 
-    @app.get("/v1/health", response_model=HealthResponse)
-    def health() -> dict:
+    health_log = _HealthLog()
+
+    @app.get("/v1/health", response_model=LivenessResponse)
+    def liveness() -> dict:
         return {"status": "ok"}
+
+    @app.get(
+        "/health",
+        response_model=HealthResponse,
+        responses={503: {"model": HealthResponse}, 405: {"model": ErrorEnvelope}},
+    )
+    def health() -> JSONResponse:
+        """Disponibilidad del servicio: consulta el almacén en cada petición (spec 004 FR-001)."""
+        started = time.perf_counter()
+        available = service.check_health()
+        status_code = 200 if available else 503
+        health_log.record(available, (time.perf_counter() - started) * 1000, status_code)
+        return JSONResponse(status_code=status_code, content=health_to_contract(available))
 
     @app.post(
         "/v1/triage",

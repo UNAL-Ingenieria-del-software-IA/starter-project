@@ -99,7 +99,7 @@ red ni contenedores.
 
 ### Pruebas de la historia 1 (escribir primero; deben fallar)
 
-- [ ] T016 [P] [US1] Crear tests/test_spec_004_runtime_health.py con el bloque «US1 — sonda», con `TestClient` sobre `create_app(build_service(...))` y `CliRunner` sobre `create_cli(...)`, según contracts/http-health.openapi.yaml y contracts/cli-health.md:
+- [X] T016 [P] [US1] Crear tests/test_spec_004_runtime_health.py con el bloque «US1 — sonda», con `TestClient` sobre `create_app(build_service(...))` y `CliRunner` sobre `create_cli(...)`, según contracts/http-health.openapi.yaml y contracts/cli-health.md:
   - `test_bdd_e1_health_200`: cuerpo exacto `{"status": "ok", "database": "connected"}`; con un doble que cuenta llamadas, comprobar que cada petición invoca `check_health()` (FR-001, sin caché);
   - `test_bdd_e2_cli_health_ok`: `health --format json` → código `0`, mismo JSON, stderr vacío; `--format table` muestra `estado`/`base de datos`;
   - `test_bdd_e3_health_503_con_doble`: `ToggleHealthRepository(available=False)` → `503` con cuerpo exacto `{"status": "error", "database": "unavailable"}`;
@@ -112,24 +112,24 @@ red ni contenedores.
 
 ### Implementación de la historia 1
 
-- [ ] T017 [US1] Agregar a src/application/services.py (research.md §R8):
+- [X] T017 [US1] Agregar a src/application/services.py (research.md §R8):
   - `IncidentService.check_health() -> bool`, que delega en el repositorio y convierte cualquier excepción en `False`;
   - la función `health_to_contract(available: bool) -> Dict[str, Any]`, que es la única proyección (data-model.md §3, «cuerpo de contrato»);
   - la docstring del módulo con la nueva proyección.
-- [ ] T018 [P] [US1] En src/adapters/inbound/api/schemas.py (research.md §R9):
+- [X] T018 [P] [US1] En src/adapters/inbound/api/schemas.py (research.md §R9):
   - renombrar `HealthResponse` → `LivenessResponse` (`status: str`);
   - crear `HealthResponse` con `status: Literal["ok", "error"]`, `database: Literal["connected", "unavailable"]` y `extra="forbid"`.
-- [ ] T019 [US1] En src/adapters/inbound/api/app.py:
+- [X] T019 [US1] En src/adapters/inbound/api/app.py:
   - `/v1/health` pasa a usar `LivenessResponse`;
   - agregar `GET /health` con `response_model=HealthResponse` y `responses={503: …}`. Llama a `service.check_health()`, proyecta con `health_to_contract` y devuelve `JSONResponse` `200`/`503`;
   - agregar el registro de cambios de estado por instancia de `create_app` (estado inicial «desconocido»; `INFO` en cada transición a `connected`; `WARNING` en cada `unavailable`; solo resultado, duración en ms y código; research.md §R8).
-- [ ] T020 [US1] Agregar el subcomando `health` a src/adapters/inbound/cli.py, según contracts/cli-health.md:
+- [X] T020 [US1] Agregar el subcomando `health` a src/adapters/inbound/cli.py, según contracts/cli-health.md:
   - `--format table|json`, con `table` por defecto;
   - construye el servicio y captura `StoreUnavailableError` → cuerpo `unavailable` en stdout, diagnóstico `error [database_unavailable]: el almacén de incidentes no responde.` en stderr y código `4`;
   - con el servicio construido, `check_health()` decide `0`/`4`;
   - la tabla tiene dos líneas (`estado`, `base de datos`);
   - actualizar la docstring del módulo con el comando nuevo.
-- [ ] T021 [US1] Ejecutar `uv run ruff check src/` y `uv run python -X utf8 -m pytest -v` (T016 en verde) y hacer el commit `feat(h004): sonda GET /health y subcomando health (US1)`
+- [X] T021 [US1] Ejecutar `uv run ruff check src/` y `uv run python -X utf8 -m pytest -v` (T016 en verde) y hacer el commit `feat(h004): sonda GET /health y subcomando health (US1)`
 
 **Punto de control**: la sonda funciona sobre SQLite y con dobles. MVP entregable.
 

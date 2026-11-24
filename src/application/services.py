@@ -1,11 +1,12 @@
-"""Casos de uso compartidos: triaje (H001), resumen de activos (H002), y creación y
-auditoría de SLA de incidentes (H003).
+"""Casos de uso compartidos: triaje (H001), resumen de activos (H002), creación y
+auditoría de SLA de incidentes (H003) y sonda de disponibilidad del almacén (H004).
 
 `IncidentService` es el único punto por el que REST y CLI clasifican reportes, consultan
-el resumen, crean incidentes y auditan su SLA. `to_contract` (spec 001 §5.2),
-`summary_to_contract` (spec 002), `creation_to_contract` y `sla_audit_to_contract`
-(spec 003) son las únicas proyecciones al contrato público, de modo que la paridad entre
-canales se obtiene por construcción (Art. 2.7). La clasificación y la clave de grupo
+el resumen, crean incidentes, auditan su SLA y sondean el almacén. `to_contract`
+(spec 001 §5.2), `summary_to_contract` (spec 002), `creation_to_contract` y
+`sla_audit_to_contract` (spec 003) y `health_to_contract` (spec 004) son las únicas
+proyecciones al contrato público, de modo que la paridad entre canales se obtiene por
+construcción (Art. 2.7). La clasificación y la clave de grupo
 salen solo de `classify_incident`, y minutos, incumplimiento y escalamiento solo de
 `evaluate_sla_status`.
 """
@@ -181,6 +182,18 @@ class IncidentService:
         self._clock = clock
         self._repository = repository
         self._id_generator = id_generator
+
+    def check_health(self) -> bool:
+        """`True` si el almacén responde a una consulta real (spec 004 FR-001–FR-004).
+
+        Delega en el repositorio en cada llamada, sin caché. Cualquier excepción del
+        adaptador cuenta como «no disponible»: defensa ante un adaptador que incumpla el
+        «nunca lanza» del puerto (research §R8).
+        """
+        try:
+            return bool(self._repository.check_health())
+        except Exception:  # noqa: BLE001 — la sonda nunca propaga un fallo (FR-004).
+            return False
 
     def triage_incident(self, reports: Sequence[ReportInput]) -> List[TriageResult]:
         """Valida y clasifica un lote de 1..N reportes, correlacionándolos entre sí.
@@ -451,6 +464,16 @@ def sla_audit_to_contract(audit: IncidentSLAAudit) -> Dict[str, Any]:
         "is_breached": evaluation.is_breached,
         "requires_escalation": evaluation.requires_escalation,
     }
+
+
+def health_to_contract(available: bool) -> Dict[str, Any]:
+    """Proyecta el resultado de la sonda al cuerpo de spec 004 (mismo valor por HTTP y CLI).
+
+    Solo hay dos cuerpos válidos: `ok`/`connected` y `error`/`unavailable`.
+    """
+    if available:
+        return {"status": "ok", "database": "connected"}
+    return {"status": "error", "database": "unavailable"}
 
 
 def summary_to_contract(summary: ActiveIncidentsSummary) -> Dict[str, Any]:

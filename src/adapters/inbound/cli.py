@@ -1,21 +1,25 @@
-"""Adaptador CLI del triaje (spec 001 §7), del resumen de activos (spec 002) y de la
-creación y auditoría de SLA de incidentes (spec 003) sobre Typer.
+"""Adaptador CLI del triaje (spec 001 §7), del resumen de activos (spec 002), de la
+creación y auditoría de SLA de incidentes (spec 003) y de la sonda del almacén (spec 004)
+sobre Typer.
 
 Uso:
     uv run python -X utf8 -m src.adapters.inbound.cli triage --raw-text "..." [--format json]
     uv run python -X utf8 -m src.adapters.inbound.cli summary [--component X] [--reference-time ISO] [--format json]
     uv run python -X utf8 -m src.adapters.inbound.cli create --title "..." --raw-text "..." [--format json]
     uv run python -X utf8 -m src.adapters.inbound.cli sla INC-XXXXXXXX [--reference-time ISO] [--format json]
+    uv run python -X utf8 -m src.adapters.inbound.cli health [--format json]
 
 Solo traduce argumentos, llama a `IncidentService` y formatea la salida con las mismas
 proyecciones que HTTP (`to_contract`, `summary_to_contract`, `creation_to_contract`,
-`sla_audit_to_contract`). `stdout` lleva solo el resultado; `stderr`, los diagnósticos.
+`sla_audit_to_contract`, `health_to_contract`). `stdout` lleva solo el resultado; `stderr`, los diagnósticos.
 Cada invocación es un proceso nuevo: para crear y auditar después hace falta un
 `DATABASE_URL` de archivo.
 
 Códigos de salida (Constitución 3.0.0, F3): 0 éxito · 1 entrada inválida · 2 error de
 uso · 4 fallo interno o configuración inválida (p. ej. `DATABASE_URL` no soportada). El
-código 3 queda retirado.
+código 3 queda retirado. `health` sale con 0 si el almacén responde y con 4 si no; en
+ese caso el cuerpo `unavailable` es un resultado (stdout) y el diagnóstico va a stderr.
+Los demás subcomandos conservan el fallo temprano si el almacén no responde (FR-019).
 
 `triage`, primer corte: un reporte por invocación. `--file`, `--raw-text` repetible,
 `audit`, `--format output` y `--explain` quedan pendientes.
@@ -30,7 +34,7 @@ from typing import Annotated, Callable, Optional
 
 import typer
 
-from src.application.ports import IncidentIdConflictError
+from src.application.ports import IncidentIdConflictError, StoreUnavailableError
 from src.application.services import (
     ActiveIncidentsSummary,
     CreateIncidentInput,
@@ -38,6 +42,7 @@ from src.application.services import (
     IncidentService,
     ReportInput,
     creation_to_contract,
+    health_to_contract,
     parse_instant,
     parse_reference_time,
     sla_audit_to_contract,
@@ -103,6 +108,11 @@ def _render_summary_table(summary: ActiveIncidentsSummary) -> str:
         for view in summary.incidents
     ]
     return "\n".join([totals, header, rule, *rows, rule])
+
+
+def _render_health_table(body: dict) -> str:
+    """Presentación humana de la sonda (contrato CLI de spec 004)."""
+    return "\n".join([f"{'estado':<15}{body['status']}", f"{'base de datos':<15}{body['database']}"])
 
 
 def _render_table(label: str, result: dict) -> str:
@@ -297,6 +307,30 @@ def create_cli(service_factory: ServiceFactory) -> typer.Typer:
             typer.echo(json.dumps(body, ensure_ascii=False))
         else:
             typer.echo(_render_sla_table(body))
+
+    @app.command("health")
+    def health(
+        output_format: Annotated[
+            OutputFormat, typer.Option("--format", help="table (por defecto) o json (mismo cuerpo que GET /health).")
+        ] = OutputFormat.table,
+    ) -> None:
+        """Consulta de verdad el almacén configurado; sale con 0 si responde y con 4 si no."""
+        try:
+            service = service_factory(None)
+        except StoreUnavailableError:
+            available = False
+        except Exception as exc:  # noqa: BLE001 — configuración inválida: solo el esquema.
+            raise _fail(f"error [internal_error]: {exc or type(exc).__name__}", EXIT_INTERNAL_ERROR)
+        else:
+            available = service.check_health()
+
+        body = health_to_contract(available)
+        if output_format is OutputFormat.json:
+            typer.echo(json.dumps(body, ensure_ascii=False))
+        else:
+            typer.echo(_render_health_table(body))
+        if not available:
+            raise _fail("error [database_unavailable]: el almacén de incidentes no responde.", EXIT_INTERNAL_ERROR)
 
     return app
 

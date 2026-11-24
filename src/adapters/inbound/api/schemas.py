@@ -1,4 +1,5 @@
-"""DTO del canal HTTP (spec 001 §5 y §6.3; spec 002, contrato del resumen; spec 003, creación y SLA).
+"""DTO del canal HTTP (spec 001 §5 y §6.3; spec 002, contrato del resumen; spec 003, creación y SLA;
+spec 004, sondas de salud).
 
 Solo describen la forma del contrato: los valores válidos de severidad, estado, equipo,
 acción y tipo de duplicado se toman de los `Literal` del dominio, nunca se redefinen aquí
@@ -8,7 +9,7 @@ acción y tipo de duplicado se toman de los `Literal` del dominio, nunca se rede
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
@@ -165,5 +166,20 @@ class ErrorEnvelope(BaseModel):
     error: ErrorBody
 
 
-class HealthResponse(BaseModel):
+class LivenessResponse(BaseModel):
+    """Cuerpo de `GET /v1/health`: el proceso vive; no consulta el almacén (spec 004 FR-005)."""
+
     status: str
+
+
+class HealthResponse(BaseModel):
+    """Cuerpo de `GET /health` (spec 004): disponibilidad del servicio y de su almacén.
+
+    Solo dos combinaciones son válidas: `ok`/`connected` (200) y `error`/`unavailable`
+    (503). No usa el sobre común de errores (spec 004 D5).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["ok", "error"]
+    database: Literal["connected", "unavailable"]
