@@ -21,6 +21,7 @@ dev = [
     # <9.2: pytest 9.2 usa dataclass(slots=True) con campos init=False, que falla en
     # CPython 3.10.0 (AttributeError '_str_cache'). Retirar el tope al subir de 3.10.0.
     "pytest>=9.1,<9.2",
+    "ruff>=0.17.6",
 ]
 
 [tool.pytest.ini_options]
