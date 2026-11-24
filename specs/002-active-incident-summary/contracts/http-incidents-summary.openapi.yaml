@@ -1,0 +1,180 @@
+openapi: 3.1.0
+info:
+  title: IncidentOps — Resumen de incidentes activos (H002)
+  version: 0.2.0
+  description: >
+    Consulta de solo lectura del resumen de incidentes activos (spec 002, FR-012).
+    El cuerpo JSON es el contrato estable y coincide valor a valor con
+    `summary --format json` del CLI (FR-014). Activo = estado distinto de RESOLVED
+    (Art. 1.10 enmendado por ADR-005).
+servers:
+  - url: http://127.0.0.1:8080
+    description: Loopback, sin autenticación (heredado de H001).
+paths:
+  /api/v1/incidents/summary:
+    get:
+      operationId: getActiveIncidentsSummary
+      summary: Resumen de incidentes activos
+      parameters:
+        - name: component
+          in: query
+          required: false
+          description: >
+            Identificador canónico del componente. Se normaliza con recorte de espacios
+            y minúsculas. Vacío o solo espacios → 422. Sin coincidencias → 200 vacío.
+          schema:
+            type: string
+          example: payment-gateway
+        - name: reference_time
+          in: query
+          required: false
+          description: >
+            Instante ISO-8601 a evaluar. Sin zona = hora de Bogotá. Se admite sufijo Z.
+            Si se omite, se usa el reloj inyectado. Se admiten instantes futuros.
+          schema:
+            type: string
+          example: "2026-11-24T09:00:00"
+      responses:
+        "200":
+          description: Resumen evaluado (también cuando no hay coincidencias).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveIncidentsSummaryResponse"
+              examples:
+                filtrado:
+                  value:
+                    reference_time: "2026-11-24T09:00:00-05:00"
+                    component_filter: payment-gateway
+                    total_active: 2
+                    breached_count: 1
+                    incidents:
+                      - incident_id: INC-2001
+                        title: Caída de la pasarela de pagos
+                        component: payment-gateway
+                        severity: P0
+                        status: OPEN
+                        elapsed_minutes: 90
+                        is_breached: true
+                        requires_escalation: false
+                      - incident_id: INC-2002
+                        title: Latencia en confirmación de pagos
+                        component: payment-gateway
+                        severity: P2
+                        status: IN_PROGRESS
+                        elapsed_minutes: 60
+                        is_breached: false
+                        requires_escalation: false
+                vacio:
+                  value:
+                    reference_time: "2026-11-24T09:00:00-05:00"
+                    component_filter: reporting-api
+                    total_active: 0
+                    breached_count: 0
+                    incidents: []
+        "400":
+          description: >
+            Petición no interpretable: parámetro desconocido (code `invalid_payload`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "405":
+          description: Método distinto de GET (code `method_not_allowed`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "422":
+          description: >
+            Contenido inaceptable: `reference_time` no parseable (code
+            `invalid_timestamp`, field `reference_time`) o `component` vacío
+            (code `invalid_payload`, field `component`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Fallo inesperado (code `internal_error`). Sin detalles internos.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+components:
+  schemas:
+    ActiveIncidentsSummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [reference_time, component_filter, total_active, breached_count, incidents]
+      properties:
+        reference_time:
+          type: string
+          format: date-time
+          description: Instante efectivamente evaluado, en Bogotá (-05:00), sin microsegundos.
+        component_filter:
+          type: [string, "null"]
+          description: Filtro normalizado; null sin filtro.
+        total_active:
+          type: integer
+          minimum: 0
+          description: Igual a la longitud de `incidents` (FR-010).
+        breached_count:
+          type: integer
+          minimum: 0
+          description: Igual al número de elementos con `is_breached` verdadero (FR-010).
+        incidents:
+          type: array
+          description: >
+            Orden: severidad P0→P3; a igual severidad, mayor `elapsed_minutes` primero;
+            a igualdad, `incident_id` ascendente (FR-011).
+          items:
+            $ref: "#/components/schemas/ActiveIncidentItem"
+    ActiveIncidentItem:
+      type: object
+      additionalProperties: false
+      required:
+        - incident_id
+        - title
+        - component
+        - severity
+        - status
+        - elapsed_minutes
+        - is_breached
+        - requires_escalation
+      properties:
+        incident_id: {type: string}
+        title: {type: string}
+        component: {type: string}
+        severity:
+          type: string
+          enum: [P0, P1, P2, P3]
+        status:
+          type: string
+          enum: [OPEN, IN_PROGRESS, ESCALATION_REQUIRED]
+        elapsed_minutes:
+          type: integer
+          minimum: 0
+          description: Calendario 24x7 para P0/P1; minutos hábiles para P2/P3 (Art. 1.6–1.7).
+        is_breached:
+          type: boolean
+          description: elapsed_minutes > límite de la severidad.
+        requires_escalation:
+          type: boolean
+          description: Excluyente con is_breached (Art. 1.8).
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [invalid_payload, invalid_timestamp, method_not_allowed, internal_error]
+            message:
+              type: string
+              description: Mensaje en español para humanos.
+            field:
+              type: string
+              description: Parámetro afectado, cuando aplica.
