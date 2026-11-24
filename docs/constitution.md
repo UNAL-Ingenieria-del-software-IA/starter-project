@@ -5,7 +5,8 @@
 - **Alcance**: todo `src/`, `docs/` y `tests/`
 - **Autoridad**: norma superior del proyecto. Todo ADR, módulo, prueba y documento
   operativo debe cumplirla. Toda excepción exige ADR aceptado que la enmiende.
-- **Decisiones que la sustentan**: `docs/adr/0003-arquitectura-hexagonal.md` (topología).
+- **Decisiones que la sustentan**: `docs/adr/0003-arquitectura-hexagonal.md` (topología);
+  `docs/adr/0005-incidente-activo-distinto-de-resuelto.md` (definición de activo, Art. 1.10).
 
 ---
 
@@ -57,8 +58,8 @@ de la evaluación.
 `Data-DBA`, `Security-IAM`. Añadir o renombrar un equipo es cambio de dominio.
 
 1.10 **Estados válidos.** `OPEN`, `IN_PROGRESS`, `ESCALATION_REQUIRED`, `RESOLVED`.
-Se consideran activos `OPEN` e `IN_PROGRESS`; un incidente `RESOLVED` exige
-`resolved_at`.
+Se consideran activos todos los estados distintos de `RESOLVED`: `OPEN`, `IN_PROGRESS`
+y `ESCALATION_REQUIRED` (ADR-005); un incidente `RESOLVED` exige `resolved_at`.
 
 1.11 **Duplicados.** La clave de grupo la calcula el dominio; los adaptadores solo la
 transportan. Formatos canónicos: `<prefijo-componente>-availability` para caídas del
@@ -97,7 +98,8 @@ dentro de `domain/` o `application/`. Un canal nuevo es un paquete nuevo más su
 en la raíz de composición: el núcleo no se reabre.
 
 2.6 **Adaptadores secundarios** — `src/adapters/outbound/`: SQLite de la librería
-estándar con marcadores `?`, índice parcial de ADR-001 y streaming; un adaptador
+estándar con marcadores `?`, índice parcial de ADR-001 (con el predicado que fija
+ADR-005) y streaming; un adaptador
 alterno para la base dedicada de H004. DDL y mapeo fila ↔ entidad viven solo aquí.
 
 2.7 **Paridad de canales.** REST, CLI y el futuro MCP deben producir la misma

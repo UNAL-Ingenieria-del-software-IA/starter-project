@@ -61,6 +61,7 @@ Dependencies point inward: `adapters → application → domain`; only `src/main
 - `incident_repository.py`'s module docstring and the benchmark banner still describe the old full-scan/N+1 version ("Antes de Refactorizar"); the query is already filtered and indexed. Don't reintroduce that debt, and fix the stale comments if you touch them.
 - README's `cd week-1/starter-project` is stale; this directory is the project root.
 - ADR-001/002 forbid ORMs, pandas and calendar libraries. Keep DB access on stdlib `sqlite3` with `?` placeholders. Frameworks stay confined to `src/adapters/inbound/` and `tests/` (Art. 3.3).
+- "Active" means every status except `RESOLVED` (`OPEN`, `IN_PROGRESS`, `ESCALATION_REQUIRED`) since the Art. 1.10 amendment (ADR-005, constitution 2.0.0). ADR-005 also replaces ADR-001's index predicate with `WHERE status <> 'RESOLVED'`.
 - Naive datetimes are interpreted as Bogotá local time; `IncidentService` normalizes every `created_at` with `to_bogota` so naive and aware values never mix.
 - Without `created_at`, every report in a batch gets the same clock instant, so two outages of the same component merge unless the text carries a recurrence marker (spec 001 §1.1).
 - `data/sample_incidents.json` (`INC-1001`…`INC-1010`) is the fixture behind the triage audit, the E4 test and `CONTEXT_LOG.md`; changing it changes expected classifications.

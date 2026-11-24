@@ -4,9 +4,8 @@
 
 **Creado**: 2026-11-24
 
-**Estado**: Borrador — listo para planificación. La implementación de FR-002 queda
-bloqueada hasta completar la primera tarea del plan: enmienda del Art. 1.10 (activo =
-todo estado distinto de `RESOLVED`).
+**Estado**: En implementación. FR-002 desbloqueado: el Art. 1.10 quedó enmendado (activo =
+todo estado distinto de `RESOLVED`) por ADR-005 y la Constitución 2.0.0.
 
 **Entrada**: Descripción del usuario: "Necesitamos consultar el resumen de incidentes
 actualmente activos (OPEN e IN_PROGRESS) tanto por API HTTP como por CLI, indicando el

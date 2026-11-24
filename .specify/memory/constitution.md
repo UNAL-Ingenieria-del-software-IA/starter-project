@@ -54,7 +54,8 @@ de la evaluación.
 `Security-IAM`. Añadir o renombrar un equipo es cambio de dominio.
 
 **1.10 Estados válidos.** `OPEN`, `IN_PROGRESS`, `ESCALATION_REQUIRED`, `RESOLVED`.
-Son activos `OPEN` e `IN_PROGRESS`; un incidente `RESOLVED` exige `resolved_at`.
+Son activos todos los estados distintos de `RESOLVED`: `OPEN`, `IN_PROGRESS` y
+`ESCALATION_REQUIRED` (ADR-005); un incidente `RESOLVED` exige `resolved_at`.
 
 **1.11 Duplicados.** La clave de grupo la calcula el dominio; los adaptadores solo la
 transportan. Formatos canónicos: `<prefijo-componente>-availability` para caídas del
@@ -102,7 +103,7 @@ contratos de dominio.
 
 **2.6 Adaptadores secundarios.** `src/adapters/outbound/` implementa los puertos
 secundarios. La persistencia usa `sqlite3` de la librería estándar con marcadores `?`,
-el índice parcial y el streaming de ADR-001. El DDL y el mapeo fila ↔ entidad viven
+el índice parcial y el streaming de ADR-001, con el predicado que fija ADR-005. El DDL y el mapeo fila ↔ entidad viven
 solo aquí. Otro motor relacional solo se admite mediante ADR aceptado que enmiende
 ADR-001.
 
@@ -308,4 +309,4 @@ Pydantic v2, Typer, pytest, Ruff) y enmendar las rutas de ADR-003 §3 (`rest/` y
 a las rutas canónicas de esta Constitución (`api/` y `cli.py`). Mientras ADR-004 no
 exista, rige el texto de esta Constitución.
 
-**Version**: 1.0.0 | **Ratified**: 2026-11-23 | **Last Amended**: 2026-11-24
+**Version**: 2.0.0 | **Ratified**: 2026-11-23 | **Last Amended**: 2026-11-24
