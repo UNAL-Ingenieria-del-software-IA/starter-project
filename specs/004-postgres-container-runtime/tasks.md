@@ -68,21 +68,21 @@ Ya no queda ningún gate ❌.
 
 **⚠️ CRÍTICO**: ninguna historia empieza antes de terminar esta fase.
 
-- [ ] T006 [P] Agregar `"psycopg".msg = "Art. 1.2: el dominio no accede a persistencia."` a la tabla `banned-api` de src/domain/ruff.toml
-- [ ] T007 [P] Agregar `"psycopg".msg = "Art. 2.3: la aplicación no conoce drivers; usa IncidentRepositoryPort."` a la tabla `banned-api` de src/application/ruff.toml
-- [ ] T008 [P] Agregar `"psycopg".msg = "Art. 2.4: un canal no accede a persistencia; llama al caso de uso."` a la tabla `banned-api` de src/adapters/inbound/ruff.toml
-- [ ] T009 [P] Agregar `"psycopg"` a `FORBIDDEN_ROOTS` y a la comprobación de canales de entrada (`test_canales_de_entrada_no_conocen_persistencia`) en tests/test_arquitectura.py
-- [ ] T010 [P] Registrar los marcadores `postgres` (necesita `INCIDENTOPS_TEST_POSTGRES_URL`) y `docker` (necesita Docker con Compose v2) en `[tool.pytest.ini_options] markers` de pyproject.toml
-- [ ] T011 Declarar `StoreUnavailableError(RuntimeError)` en src/application/ports.py, con docstring en español: «el almacén no responde, al componer el servicio o durante una operación» (data-model.md §3 `StoreUnavailableError`, research.md §R6). El `Protocol` del puerto no cambia (research.md §R3).
-- [ ] T012 Renombrar `create_incident_repository` → `create_repository` en src/adapters/outbound/factory.py, sin alias y por ahora solo con las ramas SQLite (research.md §R7). Actualizar el docstring del módulo y el mensaje de esquema no soportado a `DATABASE_URL no soportada (esquema '<s>'): use sqlite:///:memory:, sqlite:///<ruta> o postgresql://…`.
-- [ ] T013 Actualizar src/main.py (research.md §R3):
+- [X] T006 [P] Agregar `"psycopg".msg = "Art. 1.2: el dominio no accede a persistencia."` a la tabla `banned-api` de src/domain/ruff.toml
+- [X] T007 [P] Agregar `"psycopg".msg = "Art. 2.3: la aplicación no conoce drivers; usa IncidentRepositoryPort."` a la tabla `banned-api` de src/application/ruff.toml
+- [X] T008 [P] Agregar `"psycopg".msg = "Art. 2.4: un canal no accede a persistencia; llama al caso de uso."` a la tabla `banned-api` de src/adapters/inbound/ruff.toml
+- [X] T009 [P] Agregar `"psycopg"` a `FORBIDDEN_ROOTS` y a la comprobación de canales de entrada (`test_canales_de_entrada_no_conocen_persistencia`) en tests/test_arquitectura.py
+- [X] T010 [P] Registrar los marcadores `postgres` (necesita `INCIDENTOPS_TEST_POSTGRES_URL`) y `docker` (necesita Docker con Compose v2) en `[tool.pytest.ini_options] markers` de pyproject.toml
+- [X] T011 Declarar `StoreUnavailableError(RuntimeError)` en src/application/ports.py, con docstring en español: «el almacén no responde, al componer el servicio o durante una operación» (data-model.md §3 `StoreUnavailableError`, research.md §R6). El `Protocol` del puerto no cambia (research.md §R3).
+- [X] T012 Renombrar `create_incident_repository` → `create_repository` en src/adapters/outbound/factory.py, sin alias y por ahora solo con las ramas SQLite (research.md §R7). Actualizar el docstring del módulo y el mensaje de esquema no soportado a `DATABASE_URL no soportada (esquema '<s>'): use sqlite:///:memory:, sqlite:///<ruta> o postgresql://…`.
+- [X] T013 Actualizar src/main.py (research.md §R3):
   - importar `create_repository`;
   - `build_repository(database_url=None, *, require_health=True)` lanza `StoreUnavailableError` en lugar de `RuntimeError`;
   - `build_service(now=None, repository=None, id_generator=None, *, require_health=True)`;
   - la `app` perezosa de `__getattr__` se construye con `build_service(require_health=False)` (FR-019);
   - `cli = create_cli(build_service)` no cambia.
-- [ ] T014 [P] Agregar a tests/doubles.py `ToggleHealthRepository(InMemoryIncidentRepository)`, con un atributo `available: bool` que `check_health()` devuelve y que las pruebas pueden alternar (E3, E5)
-- [ ] T015 Ejecutar `uv run ruff check src/` y `uv run python -X utf8 -m pytest -v` en verde. Las suites de las specs 001–003 deben seguir igual. Commit `chore(h004): fronteras psycopg, create_repository y require_health`.
+- [X] T014 [P] Agregar a tests/doubles.py `ToggleHealthRepository(InMemoryIncidentRepository)`, con un atributo `available: bool` que `check_health()` devuelve y que las pruebas pueden alternar (E3, E5)
+- [X] T015 Ejecutar `uv run ruff check src/` y `uv run python -X utf8 -m pytest -v` en verde. Las suites de las specs 001–003 deben seguir igual. Commit `chore(h004): fronteras psycopg, create_repository y require_health`.
 
 **Punto de control**: Ruff veta `psycopg` fuera de `adapters/outbound`, la fábrica tiene su
 nombre definitivo y la composición distingue HTTP de CLI.

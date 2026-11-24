@@ -9,6 +9,7 @@ ban-relative-imports = "parents"
 
 [lint.flake8-tidy-imports.banned-api]
 "sqlite3".msg = "Art. 2.4: un canal no accede a persistencia; llama al caso de uso."
+"psycopg".msg = "Art. 2.4: un canal no accede a persistencia; llama al caso de uso."
 "src.adapters.outbound".msg = "Art. 2.8: solo la raíz de composición conoce adaptadores de salida."
 "src.domain.sla_calculator".msg = "FR-005 y Art. 2.4: un canal no recalcula SLA; usa IncidentService."
 "src.domain.triage_rules".msg = "Art. 2.4: un canal no replica el triaje; usa IncidentService."

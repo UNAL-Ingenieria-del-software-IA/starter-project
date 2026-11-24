@@ -8,6 +8,7 @@ ban-relative-imports = "parents"
 
 [lint.flake8-tidy-imports.banned-api]
 "sqlite3".msg = "Art. 2.3: la aplicación no conoce SQL; usa IncidentRepositoryPort."
+"psycopg".msg = "Art. 2.3: la aplicación no conoce drivers; usa IncidentRepositoryPort."
 "json".msg = "Art. 2.3: la serialización pertenece a los adaptadores."
 "pathlib".msg = "Art. 2.3: la aplicación no conoce rutas del proyecto."
 "os".msg = "Art. III.5: solo la raíz de composición lee DATABASE_URL y el entorno."

@@ -28,6 +28,10 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "postgres: necesita una base PostgreSQL de pruebas en INCIDENTOPS_TEST_POSTGRES_URL (spec 004)",
+    "docker: necesita Docker con Compose v2 (spec 004)",
+]
 
 # Fronteras estáticas (Constitución, Principio IV). Las capas `domain`, `application` y
 # `adapters/inbound` tienen su propio `ruff.toml` que extiende esta configuración y declara

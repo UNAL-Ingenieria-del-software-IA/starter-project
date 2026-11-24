@@ -16,7 +16,7 @@ SRC = Path(__file__).resolve().parent.parent / "src"
 
 # Módulos prohibidos en ambas capas internas (Art. 1.2 y 3.3).
 FORBIDDEN_ROOTS = {
-    "json", "pathlib", "sqlite3", "argparse", "os",
+    "json", "pathlib", "sqlite3", "psycopg", "argparse", "os",
     "fastapi", "starlette", "pydantic", "typer", "click", "uvicorn", "httpx",
 }
 
@@ -66,13 +66,14 @@ def test_canales_de_entrada_no_conocen_persistencia():
     """
     Given los módulos de src/adapters/inbound/
     When  se inspeccionan sus importaciones
-    Then  no importan sqlite3 ni adaptadores de salida: solo la raíz de composición
-          conoce implementaciones concretas (Art. 2.8; complemento AST de Ruff, IV.5)
+    Then  no importan sqlite3, psycopg ni adaptadores de salida: solo la raíz de
+          composición conoce implementaciones concretas (Art. 2.8; complemento AST de
+          Ruff, IV.5)
     """
     violations = []
     for path in sorted((SRC / "adapters" / "inbound").rglob("*.py")):
         for lineno, module in _imports(path):
-            if module.split(".")[0] == "sqlite3" or module.startswith("src.adapters.outbound"):
+            if module.split(".")[0] in {"sqlite3", "psycopg"} or module.startswith("src.adapters.outbound"):
                 violations.append(f"{path.relative_to(SRC.parent)}:{lineno} importa {module}")
     assert not violations, "\n".join(violations)
 

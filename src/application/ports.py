@@ -22,6 +22,19 @@ class IncidentIdConflictError(Exception):
         self.incident_id = incident_id
 
 
+class StoreUnavailableError(RuntimeError):
+    """El almacén no responde, al componer el servicio o durante una operación.
+
+    La lanza la raíz de composición cuando el almacén no supera `check_health()`, y un
+    adaptador de salida cuando pierde la conexión durante una operación del puerto
+    (spec 004 research §R3 y §R6). El mensaje nunca incluye la URL ni la causa del driver
+    (Constitución 3.3 y 3.5).
+    """
+
+    def __init__(self, message: str = "El almacén de incidentes no responde.") -> None:
+        super().__init__(message)
+
+
 class ClockPort(Protocol):
     """Suministra el instante de referencia; el núcleo nunca lee el reloj (Art. 1.3)."""
 

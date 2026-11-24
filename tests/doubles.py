@@ -73,6 +73,23 @@ class InMemoryIncidentRepository:
         return True
 
 
+class ToggleHealthRepository(InMemoryIncidentRepository):
+    """Doble cuya sonda devuelve `available`, alternable por la prueba (spec 004 E3, E5).
+
+    `health_calls` cuenta las invocaciones de `check_health()` para comprobar que la sonda
+    consulta el almacén en cada petición, sin caché (FR-001).
+    """
+
+    def __init__(self, incidents: Iterable[Incident] = (), *, available: bool = True) -> None:
+        super().__init__(incidents)
+        self.available = available
+        self.health_calls = 0
+
+    def check_health(self) -> bool:
+        self.health_calls += 1
+        return self.available
+
+
 class FailingIncidentRepository(InMemoryIncidentRepository):
     """Doble que simula un fallo inesperado del almacén al leer activos (spec 002 FR-012/FR-013)."""
 

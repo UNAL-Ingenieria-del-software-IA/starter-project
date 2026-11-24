@@ -8,6 +8,7 @@ ban-relative-imports = "parents"
 
 [lint.flake8-tidy-imports.banned-api]
 "sqlite3".msg = "Art. 1.2: el dominio no accede a persistencia."
+"psycopg".msg = "Art. 1.2: el dominio no accede a persistencia."
 "json".msg = "Art. 1.2: el dominio no serializa; eso es tarea de los adaptadores."
 "pathlib".msg = "Art. 1.2: el dominio no conoce rutas del proyecto."
 "os".msg = "Art. 1.2: el dominio no lee variables de entorno ni el sistema operativo."
