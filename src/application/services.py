@@ -146,10 +146,22 @@ class IncidentService:
     ) -> ActiveIncidentsSummary:
         """Resume los incidentes activos a un instante, opcionalmente de un componente.
 
-        Solo lee el repositorio (FR-015). El instante es `reference_time` o el reloj
+        Solo lee el repositorio (FR-015). El filtro se compara sin mayúsculas y sin
+        espacios circundantes (FR-006). El instante es `reference_time` o el reloj
         inyectado, en hora de Bogotá y truncado a segundos: el mismo que se evalúa y se
         declara (FR-008). Los creados después del instante no cuentan (FR-009).
+
+        Raises:
+            ValidationError: `invalid_payload` si el filtro está vacío o solo tiene espacios.
         """
+        if component_filter is not None:
+            component_filter = component_filter.strip().lower()
+            if not component_filter:
+                raise ValidationError(
+                    "invalid_payload",
+                    "El filtro de componente no puede estar vacío ni contener solo espacios.",
+                    "component",
+                )
         instant = to_bogota(reference_time or self._clock.now()).replace(microsecond=0)
 
         views: List[ActiveIncidentView] = []

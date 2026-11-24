@@ -472,3 +472,124 @@ def test_e12_la_consulta_no_modifica_los_datos(store, caplog):
     assert any("total_active=2" in record.getMessage() for record in caplog.records)
     for incident in incidents:
         assert incident.title not in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# 3. Historia 2 — Enfocarse en un componente (US2)
+# ---------------------------------------------------------------------------
+
+
+def two_component_store() -> Tuple[Incident, ...]:
+    return (
+        make_incident("INC-P1", severity="P0", component="payment-gateway", created_at=REF - timedelta(minutes=90)),
+        make_incident("INC-P2", severity="P2", component="payment-gateway", status="IN_PROGRESS"),
+        make_incident("INC-P3", severity="P1", component="payment-gateway", status="RESOLVED"),
+        make_incident("INC-A1", severity="P0", component="auth-identity", created_at=REF - timedelta(minutes=120)),
+        make_incident("INC-A2", severity="P3", component="auth-identity", status="ESCALATION_REQUIRED"),
+    )
+
+
+def test_e2_filtro_por_componente():
+    """
+    E2 — Filtro por componente
+    Given incidentes activos en payment-gateway y auth-identity
+    When  la persona responsable consulta el resumen filtrando por payment-gateway
+    Then  obtiene una respuesta exitosa
+    And   el detalle muestra solo incidentes de payment-gateway
+    And   los totales describen únicamente ese componente
+    And   el resumen indica payment-gateway como componente filtrado
+    """
+    service, _ = summary_service(*two_component_store())
+
+    summary = service.get_active_incidents_summary("payment-gateway")
+    body = TestClient(create_app(service)).get(SUMMARY_PATH, params={"component": "payment-gateway"}).json()
+
+    assert [view.incident_id for view in summary.incidents] == ["INC-P1", "INC-P2"]
+    assert (summary.total_active, summary.breached_count) == (2, 1)
+    assert summary.component_filter == "payment-gateway"
+    assert body["component_filter"] == "payment-gateway"
+    assert {item["component"] for item in body["incidents"]} == {"payment-gateway"}
+    assert (body["total_active"], body["breached_count"]) == (2, 1)
+
+
+@pytest.mark.parametrize(
+    "incidents, component",
+    [
+        pytest.param(
+            (make_incident("INC-R1", status="RESOLVED"), make_incident("INC-R2", status="RESOLVED")),
+            None,
+            id="E3.1-sin-activos",
+        ),
+        pytest.param(two_component_store(), "reporting-api", id="E3.2-sin-coincidencias"),
+    ],
+)
+def test_e3_caso_vacio_es_exitoso(incidents, component):
+    """
+    E3 — Caso vacío: sin incidentes activos o sin coincidencias
+    Given <situación del almacén>
+    When  se consulta el resumen <consulta>
+    Then  obtiene una respuesta exitosa y no un aviso de recurso inexistente
+    And   el total activo es 0, el total incumplido es 0 y el detalle está vacío
+    """
+    service, _ = summary_service(*incidents)
+    params = {"component": component} if component is not None else {}
+
+    response = TestClient(create_app(service)).get(SUMMARY_PATH, params=params)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["total_active"], body["breached_count"], body["incidents"]) == (0, 0, [])
+    assert body["component_filter"] == component
+
+
+def test_filtro_con_mayusculas_y_espacios_se_normaliza():
+    """
+    Caso borde — Filtro con mayúsculas o espacios circundantes
+    Given activos en payment-gateway
+    When  se filtra por " Payment-Gateway "
+    Then  coincide con el componente canónico y lo declara normalizado
+    """
+    service, _ = summary_service(*two_component_store())
+
+    summary = service.get_active_incidents_summary(" Payment-Gateway ")
+
+    assert summary.component_filter == "payment-gateway"
+    assert [view.incident_id for view in summary.incidents] == ["INC-P1", "INC-P2"]
+
+
+def test_sc004_el_filtro_no_altera_las_cifras_de_otros_componentes():
+    """
+    SC-004 — Filtrar no altera las cifras del resto
+    Given activos en dos componentes
+    When  se consulta el global y cada componente por separado
+    Then  la unión de los filtrados reproduce el global, valor a valor
+    """
+    service, _ = summary_service(*two_component_store())
+
+    global_summary = service.get_active_incidents_summary()
+    filtered = [service.get_active_incidents_summary(name) for name in ("payment-gateway", "auth-identity")]
+
+    assert sum(item.total_active for item in filtered) == global_summary.total_active
+    assert sum(item.breached_count for item in filtered) == global_summary.breached_count
+    union = [view for item in filtered for view in item.incidents]
+    assert _by_id(union) == _by_id(global_summary.incidents)
+
+
+@pytest.mark.parametrize("component", ["", "   "])
+def test_filtro_vacio_se_rechaza_con_422(component):
+    """
+    E11a (filtro) — Un filtro vacío o solo espacios es contenido inaceptable
+    Given una consulta con filtro vacío
+    When  se envía por la web
+    Then  responde 422 invalid_payload sobre el campo component, sin resumen
+    """
+    service, _ = summary_service(*two_component_store())
+
+    response = TestClient(create_app(service)).get(SUMMARY_PATH, params={"component": component})
+
+    assert response.status_code == 422
+    assert response.json()["error"] == {
+        "code": "invalid_payload",
+        "message": "El filtro de componente no puede estar vacío ni contener solo espacios.",
+        "field": "component",
+    }

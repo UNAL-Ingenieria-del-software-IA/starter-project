@@ -123,11 +123,11 @@ vacío.
 
 ### Pruebas de la Historia 2 (escribir primero; deben fallar)
 
-- [ ] T034 [US2] Escribir en tests/test_spec_002_summary.py E2, E3 (E3.1 y E3.2 parametrizados), la normalización de `" Payment-Gateway "`, SC-004 (la suma de los resúmenes por componente reproduce el global sin diferencias) y el `422 invalid_payload` con `field = "component"` para `""` y `"   "`, por servicio y por HTTP
+- [X] T034 [US2] Escribir en tests/test_spec_002_summary.py E2, E3 (E3.1 y E3.2 parametrizados), la normalización de `" Payment-Gateway "`, SC-004 (la suma de los resúmenes por componente reproduce el global sin diferencias) y el `422 invalid_payload` con `field = "component"` para `""` y `"   "`, por servicio y por HTTP
 
 ### Implementación de la Historia 2
 
-- [ ] T035 [US2] Implementar en src/application/services.py la normalización `strip().lower()` y el rechazo de filtro vacío de data-model.md `ActiveIncidentsSummary.component_filter` (paso 1 de data-model.md §2, `ValidationError("invalid_payload", …, "component")`), reenviando al repositorio el valor normalizado
+- [X] T035 [US2] Implementar en src/application/services.py la normalización `strip().lower()` y el rechazo de filtro vacío de data-model.md `ActiveIncidentsSummary.component_filter` (paso 1 de data-model.md §2, `ValidationError("invalid_payload", …, "component")`), reenviando al repositorio el valor normalizado
 
 **Punto de control**: US1 y US2 funcionan cada una por separado.
 
